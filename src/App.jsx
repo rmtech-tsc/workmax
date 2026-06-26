@@ -80,6 +80,24 @@
        lat:-23.9125, lng:29.4547, checkinRadius:70,
      },
    ],
+
+   companies: [
+    { id:"c1", ... },
+    { id:"c2", ... },
+   ],
+
+   companies: [
+    { id:"c1", ... },
+    { id:"c2", ... },
+   ],
+
+   attendance: [],
+   leaves:     [],
+   payslips:   [],
+
+};
+
+};
  
  
  };
