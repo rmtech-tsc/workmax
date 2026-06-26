@@ -46,122 +46,42 @@
        password:"GlobalAdmin@1", avatar:"MM", blocked:false,
        company:null, department:null, position:"Platform Administrator",
        joinDate:"2026-01-01", phone:"081 815 8294",
-       companyEmail:'malope.mahlangu@rm-tech.site', personalEmail:"malopejackson6@gmail.com",
+       companyEmail:'malope.mahlangu@workmax.co.za', personalEmail:"malope.mahlangu@rm-tech.site",
      },
-     // ── RM Tech ──────────────────────────────────────────────────────────
+     // ── Admin Root Values ──────────────────────────────────────────────────────────
      {
        id:"u2", role:"company_admin",
-       name:"Malope Mahlangu", email:"admin@rmtech.com",
+       name:"Malope Mothiba", email:"admin@rmtech.com",
        password:"R&MAdmin@01", avatar:"MR", blocked:false,
        company:"c1", department:"Management", position:"HR Manager",
-       joinDate:"2026-01-01", phone:"071 234 5678",
+       joinDate:"2026-01-01", phone:"071 456 5443",
        companyEmail:"malope@rmtech.com", personalEmail:"malope.personal@gmail.com",
      },
+    
+    
      {
-       id:"u3", role:"employee",
-       name:"Maphalle Mothiba", email:"maphalle.mothiba@rmtech.com",
-       password:"Employee@1", avatar:"MT", blocked:false,
-       company:"c1", department:"Data Science", position:"Intern Data Scientist",
-       joinDate:"2026-07-01", phone:"066 327 1227",
-       companyEmail:"maphalle.mothiba@rm-tech.site", personalEmail:"maphalle.mothiba77@gmail.com",
-       faceRegistered:true,
-     },
-     {
-       id:"u4", role:"employee",
-       name:"Phaswane Ramokone", email:"phaswane.ramokone@rmtech.com",
-       password:"Employee@1", avatar:"PS", blocked:false,
-       company:"c1", department:"Engineering", position:"Software Engineer",
-       joinDate:"2026-01-01", phone:"069 755 3612",
-       companyEmail:"phaswane.ramokone@rm-tech.site", personalEmail:"phaswaneramss@gmail.com",
-       faceRegistered:true,
-     },
-     
-     // ── MTL Accountants ───────────────────────────────────────────────────
-     {
-       id:"u6", role:"company_admin",
+       id:"u3", role:"company_admin",
        name:"Tshepho Tladi", email:"admin@mtlaccountants.com",
        password:"MTLAdmin@1", avatar:"TT", blocked:false,
        company:"c2", department:"Management", position:"CEO",
-       joinDate:"2026-05-01", phone:"+27 67 256 2160",
+       joinDate:"2026-07-01", phone:"+27 67 256 2160",
        companyEmail:"tshepho@mtlaccountants.com", personalEmail:"tshepho.tladi@gmail.com",
      },
-     {
-       id:"u7", role:"employee",
-       name:"Lesedi Mothapo", email:"lesedi.mothapo@mtlaccountants.com",
-       password:"Employee@1", avatar:"LM", blocked:false,
-       company:"c2", department:"Audit", position:"Senior Auditor",
-       joinDate:"2026-01-10", phone:"078 687 4352",
-       companyEmail:"lesedi@mtlaccountants.com", personalEmail:"lesedi.personal@gmail.com",
-       faceRegistered:true,
-     },
-     {
-       id:"u8", role:"employee",
-       name:"Malope Mahlangu", email:"malope.mahlangu@mtlaccountants.com",
-       password:"Employee@2", avatar:"MM", blocked:false,
-       company:"c2", department:"IT", position:"Data Scientist",
-       joinDate:"2026-04-06", phone:"081 815 8294",
-       companyEmail:"malope@mtlaccountants.com", personalEmail:"malope.m.personal@gmail.com",
-       faceRegistered:true,
-     },
+     
    ],
  
    companies: [
      {
        id:"c1", name:"RM Tech", industry:"Technology", size:120, plan:"Enterprise",
-       // Office GPS coordinates for check-in geolocation verification
-       // Johannesburg CBD — replace with real office coordinates
-       lat:-23.9993, lng:29.6496, checkinRadius:80, // metres
+       lat:-23.9994, lng:29.6496, checkinRadius:40, // metres
      },
      {
        id:"c2", name:"MTL Tladi Accountants", industry:"Accounting", size:45, plan:"Pro",
-       // Pretoria CBD — replace with real office coordinates
-       lat:-23.9993, lng:29.6496, checkinRadius:200,
+       lat:-23.9125, lng:29.4547, checkinRadius:70,
      },
    ],
  
-   attendance: [
-     {id:"a1",  userId:"u3", date:"2026-04-01", checkIn:"08:45", checkOut:"16:00", status:"present"},
-     {id:"a2",  userId:"u3", date:"2026-04-02", checkIn:"09:10", checkOut:"16:00", status:"present"},
-     {id:"a3",  userId:"u3", date:"2026-04-03", checkIn:null,    checkOut:null,    status:"absent"},
-     {id:"a4",  userId:"u3", date:"2026-04-04", checkIn:"08:55", checkOut:"16:00", status:"present"},
-     {id:"a5",  userId:"u3", date:"2026-04-07", checkIn:"09:58", checkOut:"16:00", status:"late"},
-     {id:"a6",  userId:"u4", date:"2026-04-01", checkIn:"08:30", checkOut:"16:00", status:"present"},
-     {id:"a7",  userId:"u4", date:"2026-04-02", checkIn:"09:55", checkOut:"16:00", status:"late"},
-     {id:"a8",  userId:"u4", date:"2026-04-03", checkIn:"08:40", checkOut:"16:00", status:"present"},
-     {id:"a9",  userId:"u7", date:"2026-04-01", checkIn:"08:20", checkOut:"16:00", status:"present"},
-     {id:"a10", userId:"u7", date:"2026-04-02", checkIn:null,    checkOut:null,    status:"absent"},
-   ],
  
-   leaves: [
-     {id:"l1", userId:"u7", type:"Annual Leave",    startDate:"2026-04-10", endDate:"2026-04-12", reason:"Family vacation",      status:"approved", adminComment:"Enjoy your break!", reviewedBy:"u6"},
-     {id:"l2", userId:"u4", type:"Sick Leave",       startDate:"2026-04-07", endDate:"2026-04-08", reason:"Flu and fever",         status:"pending",  adminComment:null, reviewedBy:null},
-     {id:"l3", userId:"u3", type:"Sick Leave",       startDate:"2026-03-20", endDate:"2026-03-21", reason:"Personal vacation",     status:"denied",   adminComment:"Insufficient notice.", reviewedBy:"u2"},
-     {id:"l4", userId:"u7", type:"Emergency Leave",  startDate:"2026-04-14", endDate:"2026-04-14", reason:"Family emergency",      status:"pending",  adminComment:null, reviewedBy:null},
-     {id:"l5", userId:"u3", type:"Annual Leave",     startDate:"2026-05-01", endDate:"2026-05-05", reason:"Holiday trip",          status:"pending",  adminComment:null, reviewedBy:null},
-     {id:"l6", userId:"u8", type:"Maternity/Paternity Leave", startDate:"2026-06-01", endDate:"2026-08-31", reason:"Maternity leave", status:"approved", adminComment:"Approved. Congratulations!", reviewedBy:"u6"},
-   ],
- 
-   payslips: [
-     // Rosina Modiba (u3) — RM Tech
-     {id:"p1",  userId:"u3", month:"January",  year:2026, basicSalary:12000, allowances:1200, deductions:1980, netPay:11220, issueDate:"2026-01-31", downloaded:false},
-     {id:"p2",  userId:"u3", month:"February", year:2026, basicSalary:12000, allowances:1200, deductions:1980, netPay:11220, issueDate:"2026-02-28", downloaded:false},
-     {id:"p3",  userId:"u3", month:"March",    year:2026, basicSalary:12000, allowances:1200, deductions:1980, netPay:11220, issueDate:"2026-03-31", downloaded:false},
-     {id:"p4",  userId:"u3", month:"April",    year:2026, basicSalary:12000, allowances:1200, deductions:1980, netPay:11220, issueDate:"2026-04-30", downloaded:false},
-     // Jane Smith (u4) — RM Tech
-     {id:"p5",  userId:"u4", month:"January",  year:2026, basicSalary:18000, allowances:1500, deductions:2925, netPay:16575, issueDate:"2026-01-31", downloaded:false},
-     {id:"p6",  userId:"u4", month:"February", year:2026, basicSalary:18000, allowances:1500, deductions:2925, netPay:16575, issueDate:"2026-02-28", downloaded:false},
-     {id:"p7",  userId:"u4", month:"March",    year:2026, basicSalary:18000, allowances:1500, deductions:2925, netPay:16575, issueDate:"2026-03-31", downloaded:false},
-     {id:"p8",  userId:"u4", month:"April",    year:2026, basicSalary:18000, allowances:1500, deductions:2925, netPay:16575, issueDate:"2026-04-30", downloaded:false},
-     // Lesedi Mothapo (u7) — MTL
-     {id:"p9",  userId:"u7", month:"January",  year:2026, basicSalary:35000, allowances:3000, deductions:5700, netPay:32300, issueDate:"2026-01-31", downloaded:false},
-     {id:"p10", userId:"u7", month:"February", year:2026, basicSalary:35000, allowances:3000, deductions:5700, netPay:32300, issueDate:"2026-02-28", downloaded:false},
-     {id:"p11", userId:"u7", month:"March",    year:2026, basicSalary:35000, allowances:3000, deductions:5700, netPay:32300, issueDate:"2026-03-31", downloaded:false},
-     {id:"p12", userId:"u7", month:"April",    year:2026, basicSalary:35000, allowances:3000, deductions:5700, netPay:32300, issueDate:"2026-04-30", downloaded:false},
-     // Malope Mahlangu (u8) — MTL
-     {id:"p13", userId:"u8", month:"February", year:2026, basicSalary:25000, allowances:2000, deductions:4050, netPay:22950, issueDate:"2026-02-28", downloaded:false},
-     {id:"p14", userId:"u8", month:"March",    year:2026, basicSalary:25000, allowances:2000, deductions:4050, netPay:22950, issueDate:"2026-03-31", downloaded:false},
-     {id:"p15", userId:"u8", month:"April",    year:2026, basicSalary:25000, allowances:2000, deductions:4050, netPay:22950, issueDate:"2026-04-30", downloaded:false},
-   ],
  };
  
  // ─── UTILITY HELPERS ──────────────────────────────────────────────────────────
