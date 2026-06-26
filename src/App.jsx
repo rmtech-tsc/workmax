@@ -39,68 +39,48 @@
  
  // ─── SEED DATA ────────────────────────────────────────────────────────────────
  const SEED = {
-   users: [
-     {
-       id:"u1", role:"global_admin",
-       name:"RM Tech", email:"globaladmin@workmax.com",
-       password:"GlobalAdmin@1", avatar:"MM", blocked:false,
-       company:null, department:null, position:"Platform Administrator",
-       joinDate:"2026-01-01", phone:"081 815 8294",
-       companyEmail:'malope.mahlangu@workmax.co.za', personalEmail:"malope.mahlangu@rm-tech.site",
-     },
-     // ── Admin Root Values ──────────────────────────────────────────────────────────
-     {
-       id:"u2", role:"company_admin",
-       name:"Malope Mothiba", email:"admin@rmtech.com",
-       password:"R&MAdmin@01", avatar:"MR", blocked:false,
-       company:"c1", department:"Management", position:"HR Manager",
-       joinDate:"2026-01-01", phone:"071 456 5443",
-       companyEmail:"malope@rmtech.com", personalEmail:"malope.personal@gmail.com",
-     },
-    
-    
-     {
-       id:"u3", role:"company_admin",
-       name:"Tshepho Tladi", email:"admin@mtlaccountants.com",
-       password:"MTLAdmin@1", avatar:"TT", blocked:false,
-       company:"c2", department:"Management", position:"CEO",
-       joinDate:"2026-07-01", phone:"+27 67 256 2160",
-       companyEmail:"tshepho@mtlaccountants.com", personalEmail:"tshepho.tladi@gmail.com",
-     },
-     
-   ],
- 
-   companies: [
-     {
-       id:"c1", name:"RM Tech", industry:"Technology", size:120, plan:"Enterprise",
-       lat:-23.9994, lng:29.6496, checkinRadius:40, // metres
-     },
-     {
-       id:"c2", name:"MTL Tladi Accountants", industry:"Accounting", size:45, plan:"Pro",
-       lat:-23.9125, lng:29.4547, checkinRadius:70,
-     },
-   ],
+  users: [
+    {
+      id:"u1", role:"global_admin",
+      name:"RM Tech", email:"globaladmin@workmax.com",
+      password:"GlobalAdmin@1", avatar:"MM", blocked:false,
+      company:null, department:null, position:"Platform Administrator",
+      joinDate:"2026-01-01", phone:"081 815 8294",
+      companyEmail:"malope.mahlangu@workmax.co.za", personalEmail:"malope.mahlangu@rm-tech.site",
+    },
+    {
+      id:"u2", role:"company_admin",
+      name:"Malope Mothiba", email:"admin@rmtech.com",
+      password:"R&MAdmin@01", avatar:"MR", blocked:false,
+      company:"c1", department:"Management", position:"HR Manager",
+      joinDate:"2026-01-01", phone:"071 456 5443",
+      companyEmail:"malope@rmtech.com", personalEmail:"malope.personal@gmail.com",
+    },
+    {
+      id:"u3", role:"company_admin",
+      name:"Tshepho Tladi", email:"admin@mtlaccountants.com",
+      password:"MTLAdmin@1", avatar:"TT", blocked:false,
+      company:"c2", department:"Management", position:"CEO",
+      joinDate:"2026-07-01", phone:"+27 67 256 2160",
+      companyEmail:"tshepho@mtlaccountants.com", personalEmail:"tshepho.tladi@gmail.com",
+    },
+  ],
 
-   companies: [
-    { id:"c1", ... },
-    { id:"c2", ... },
-   ],
+  companies: [
+    {
+      id:"c1", name:"RM Tech", industry:"Technology", size:120, plan:"Enterprise",
+      lat:-23.999447, lng:29.649635, checkinRadius:40,
+    },
+    {
+      id:"c2", name:"MTL Tladi Accountants", industry:"Accounting", size:45, plan:"Pro",
+      lat:-23.9124868, lng:29.4546655, checkinRadius:70,
+    },
+  ],
 
-   companies: [
-    { id:"c1", ... },
-    { id:"c2", ... },
-   ],
-
-   attendance: [],
-   leaves:     [],
-   payslips:   [],
-
+  attendance: [],
+  leaves:     [],
+  payslips:   [],
 };
-
-};
- 
- 
- };
  
  // ─── UTILITY HELPERS ──────────────────────────────────────────────────────────
  const today           = () => new Date().toISOString().split("T")[0];
