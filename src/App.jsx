@@ -684,7 +684,7 @@
    const [locationMetres,  setLocationMetres]  = useState(null);
  
    const todayStr       = today();
-   const isBeforeCutoff = nowHour() < 12; // check-in window closes at 12pm midday
+   const isBeforeCutoff = nowHour() < 17; // check-in window closes at 5pm midday
    const days           = daysInMonth(calYear,calMonth);
    const firstDay       = firstDayOfMonth(calYear,calMonth);
    const monthNames     = ["January","February","March","April","May","June","July","August","September","October","November","December"];
