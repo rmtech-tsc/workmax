@@ -265,3 +265,119 @@
    }).eq('id', employeeId)
    if (error) throw new Error(error.message)
  }
+// ═══════════════════════════════════════════════════════════════════════════════
+// LEAVES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const fetchLeaves = async (companyId) => {
+  if (!supabase) return []
+  try {
+    let q = supabase.from('leaves').select('*')
+    if (companyId) q = q.eq('company_id', companyId)
+    const { data, error } = await q
+    if (error) return []
+    return (data || []).map(r => ({
+      id: r.id, userId: r.user_id, type: r.type,
+      startDate: r.start_date, endDate: r.end_date,
+      reason: r.reason, status: r.status,
+      adminComment: r.admin_comment, reviewedBy: r.reviewed_by,
+    }))
+  } catch { return [] }
+}
+
+export const fetchAllLeaves = async () => fetchLeaves(null)
+
+export const createLeaveInDB = async (leave, companyId) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('leaves').insert({
+    id: leave.id, user_id: leave.userId, company_id: companyId,
+    type: leave.type, start_date: leave.startDate, end_date: leave.endDate,
+    reason: leave.reason, status: 'pending',
+    admin_comment: null, reviewed_by: null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export const updateLeaveInDB = async (leaveId, status, adminComment, reviewedBy) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('leaves')
+    .update({ status, admin_comment: adminComment, reviewed_by: reviewedBy })
+    .eq('id', leaveId)
+  if (error) throw new Error(error.message)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATTENDANCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const fetchAttendance = async (companyId) => {
+  if (!supabase) return []
+  try {
+    let q = supabase.from('attendance').select('*')
+    if (companyId) q = q.eq('company_id', companyId)
+    const { data, error } = await q
+    if (error) return []
+    return (data || []).map(r => ({
+      id: r.id, userId: r.user_id, date: r.date,
+      checkIn: r.check_in, checkOut: r.check_out,
+      status: r.status, locationVerified: r.location_verified,
+    }))
+  } catch { return [] }
+}
+
+export const fetchAllAttendance = async () => fetchAttendance(null)
+
+export const createAttendanceInDB = async (record, companyId) => {
+  if (!supabase) return // silent fail — attendance still works locally
+  try {
+    await supabase.from('attendance').insert({
+      id: record.id, user_id: record.userId, company_id: companyId,
+      date: record.date, check_in: record.checkIn, check_out: record.checkOut,
+      status: record.status, location_verified: record.locationVerified || false,
+    })
+  } catch { /* silent fail */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAYSLIPS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const fetchPayslips = async (companyId) => {
+  if (!supabase) return []
+  try {
+    let q = supabase.from('payslips').select('*')
+    if (companyId) q = q.eq('company_id', companyId)
+    const { data, error } = await q
+    if (error) return []
+    return (data || []).map(r => ({
+      id: r.id, userId: r.user_id, month: r.month, year: r.year,
+      basicSalary: r.basic_salary, allowances: r.allowances,
+      deductions: r.deductions, netPay: r.net_pay,
+      issueDate: r.issue_date, downloaded: r.downloaded,
+    }))
+  } catch { return [] }
+}
+
+export const fetchAllPayslips = async () => fetchPayslips(null)
+
+export const createPayslipInDB = async (payslip, companyId) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('payslips').insert({
+    id: payslip.id, user_id: payslip.userId, company_id: companyId,
+    month: payslip.month, year: payslip.year,
+    basic_salary: payslip.basicSalary, allowances: payslip.allowances,
+    deductions: payslip.deductions, net_pay: payslip.netPay,
+    issue_date: payslip.issueDate, downloaded: false,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export const updatePayslipInDB = async (payslipId, p) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('payslips').update({
+    basic_salary: p.basicSalary, allowances: p.allowances,
+    deductions: p.deductions, net_pay: p.netPay,
+    month: p.month, year: p.year,
+  }).eq('id', payslipId)
+  if (error) throw new Error(error.message)
+}
