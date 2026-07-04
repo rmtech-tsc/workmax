@@ -18,6 +18,7 @@
  */
 
  import { useState, useEffect, useRef, useCallback } from "react";
+ import ReactDOM from "react-dom";
 
  import { loginAdmin, loginEmployee, fetchAdmins, fetchCompanies, fetchEmployees,
   fetchAllEmployees, createAdminInDB, createCompanyInDB, createEmployeeInDB,
@@ -177,6 +178,8 @@ new Promise(resolve => {
    @keyframes scanLine{0%{top:8px;}100%{top:calc(100% - 8px);}}
    .fade-in{animation:fadeIn 0.3s ease both;}
    .spin{animation:spin 1s linear infinite;}
+   select option{background:#122954;color:#FFFFFF;}
+   select{color:#FFFFFF;}
  `;
  
  // ─── STYLE PRIMITIVES ─────────────────────────────────────────────────────────
@@ -253,24 +256,41 @@ new Promise(resolve => {
  
  // ─── MODAL ────────────────────────────────────────────────────────────────────
  function Modal({title,onClose,children,width=520}) {
-   return (
-     <div style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.7)",
-       display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-       onClick={e=>e.target===e.currentTarget&&onClose()}>
-       <div style={{background:T.navyMid,borderRadius:20,width:"100%",maxWidth:width,
-         border:`1px solid rgba(255,255,255,0.1)`,animation:"fadeIn 0.25s ease",
-         maxHeight:"90vh",overflowY:"auto"}}>
-         <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",
-           padding:"20px 24px",borderBottom:`1px solid rgba(255,255,255,0.06)`}}>
-           <span style={s.h2}>{title}</span>
-           <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:"none",
-             borderRadius:8,width:32,height:32,color:T.white,fontSize:18,
-             display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-         </div>
-         <div style={{padding:24}}>{children}</div>
-       </div>
-     </div>
-   );
+  return ReactDOM.createPortal(
+    <div style={{
+      position:"fixed",top:0,left:0,right:0,bottom:0,
+      zIndex:9999,
+      background:"rgba(0,0,0,0.75)",
+      overflowY:"auto",
+      WebkitOverflowScrolling:"touch",
+    }} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{
+        background:T.navyMid,
+        borderRadius:20,
+        width:"calc(100% - 32px)",
+        maxWidth:width,
+        border:`1px solid rgba(255,255,255,0.1)`,
+        animation:"fadeIn 0.25s ease",
+        margin:"16px auto 32px",
+      }}>
+        <div style={{
+          ...s.flex(0,"row","center"),
+          justifyContent:"space-between",
+          padding:"20px 24px",
+          borderBottom:`1px solid rgba(255,255,255,0.06)`,
+        }}>
+          <span style={s.h2}>{title}</span>
+          <button onClick={onClose} style={{
+            background:"rgba(255,255,255,0.06)",border:"none",
+            borderRadius:8,width:32,height:32,color:T.white,fontSize:18,
+            display:"flex",alignItems:"center",justifyContent:"center",
+          }}>×</button>
+        </div>
+        <div style={{padding:24}}>{children}</div>
+      </div>
+    </div>,
+    document.body
+  );
  }
  
  // ─── FACE SCANNER ─────────────────────────────────────────────────────────────
@@ -586,105 +606,189 @@ new Promise(resolve => {
  
  // ─── APP SHELL ────────────────────────────────────────────────────────────────
  function AppShell({user,onLogout,children,activeNav,setActiveNav,navItems}) {
-   const [profileOpen,setProfileOpen]=useState(false);
-   const dropRef=useRef(null);
-   useEffect(()=>{
-     const h=e=>{if(dropRef.current&&!dropRef.current.contains(e.target))setProfileOpen(false);};
-     document.addEventListener("mousedown",h); return()=>document.removeEventListener("mousedown",h);
-   },[]);
- 
-   return (
-     <div style={{display:"flex",minHeight:"100vh",background:T.navy}}>
-       <style>{globalCSS}</style>
-       <aside style={{width:240,background:T.navyMid,borderRight:`1px solid rgba(255,255,255,0.06)`,
-         display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:100}}>
-         <div style={{padding:"24px 20px",borderBottom:`1px solid rgba(255,255,255,0.06)`}}>
-           <div style={{...s.flex(10,"row","center")}}>
-             <div style={{width:38,height:38,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.accentLight})`,
-               display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,flexShrink:0}}>W</div>
-             <div>
-               <div style={{fontWeight:800,fontSize:16,letterSpacing:-0.5}}>WorkMax</div>
-               <div style={{...s.sub,fontSize:11}}>{user.role==="global_admin"?"Global Platform":user.role==="company_admin"?"Admin Panel":"Employee Portal"}</div>
-             </div>
-           </div>
-         </div>
-         <nav style={{flex:1,padding:"16px 12px",overflowY:"auto"}}>
-           {navItems.map(item=>{
-             const active=activeNav===item.id;
-             return (
-               <button key={item.id} onClick={()=>setActiveNav(item.id)} style={{
-                 display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",
-                 background:active?`${T.accent}22`:"transparent",
-                 color:active?T.accentLight:T.gray400,
-                 border:active?`1px solid ${T.accent}33`:"1px solid transparent",
-                 borderRadius:10,marginBottom:4,cursor:"pointer",textAlign:"left",
-                 fontWeight:active?700:500,fontSize:14,transition:"all 0.15s"}}>
-                 <span style={{color:active?T.accentLight:T.gray400}}>{item.icon}</span>
-                 {item.label}
-               </button>
-             );
-           })}
-         </nav>
-         <div style={{padding:"16px",borderTop:`1px solid rgba(255,255,255,0.06)`,display:"flex",alignItems:"center",gap:10}}>
-           <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,
-             display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0}}>{user.avatar}</div>
-           <div style={{flex:1,overflow:"hidden"}}>
-             <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.name}</div>
-             <div style={{fontSize:11,color:T.gray400,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.email}</div>
-           </div>
-         </div>
-       </aside>
- 
-       <div style={{marginLeft:240,flex:1,display:"flex",flexDirection:"column"}}>
-         <header style={{background:T.navyMid,borderBottom:`1px solid rgba(255,255,255,0.06)`,
-           padding:"0 28px",height:64,display:"flex",alignItems:"center",justifyContent:"space-between",
-           position:"sticky",top:0,zIndex:50}}>
-           <h1 style={{...s.h2,fontSize:18}}>{navItems.find(n=>n.id===activeNav)?.label||""}</h1>
-           {user.role==="employee"&&(
-             <div ref={dropRef} style={{position:"relative"}}>
-               <button onClick={()=>setProfileOpen(v=>!v)} style={{...s.flex(8,"row","center"),
-                 background:"rgba(255,255,255,0.05)",border:`1px solid rgba(255,255,255,0.1)`,
-                 borderRadius:10,padding:"7px 14px",color:T.white,fontSize:14,fontWeight:600}}>
-                 <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,
-                   display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{user.avatar}</div>
-                 {user.name.split(" ")[0]} ▾
-               </button>
-               {profileOpen&&(
-                 <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:T.navyMid,
-                   border:`1px solid rgba(255,255,255,0.1)`,borderRadius:12,minWidth:180,
-                   boxShadow:"0 8px 32px rgba(0,0,0,0.4)",overflow:"hidden",animation:"fadeIn 0.15s ease"}}>
-                   {[{id:"profile",label:"My Profile",icon:<Icon.Profile/>},{id:"stats",label:"My Stats",icon:<Icon.Stats/>}].map(item=>(
-                     <button key={item.id} onClick={()=>{setActiveNav(item.id);setProfileOpen(false);}}
-                       style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"12px 16px",
-                         background:"none",border:"none",color:T.white,cursor:"pointer",fontSize:14,textAlign:"left"}}
-                       onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}
-                       onMouseLeave={e=>e.currentTarget.style.background="none"}>
-                       <span style={{color:T.gray400}}>{item.icon}</span>{item.label}
-                     </button>
-                   ))}
-                   <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
-                   <button onClick={onLogout}
-                     style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"12px 16px",
-                       background:"none",border:"none",color:T.danger,cursor:"pointer",fontSize:14,textAlign:"left"}}
-                     onMouseEnter={e=>e.currentTarget.style.background="rgba(239,68,68,0.08)"}
-                     onMouseLeave={e=>e.currentTarget.style.background="none"}>
-                     <Icon.Logout/>Logout
-                   </button>
-                 </div>
-               )}
-             </div>
-           )}
-           {user.role!=="employee"&&(
-             <button onClick={onLogout} style={{...s.btn("rgba(255,255,255,0.06)",T.gray400),fontSize:13}}>
-               <Icon.Logout/>Logout
-             </button>
-           )}
-         </header>
-         <main style={{flex:1,padding:28,overflowY:"auto"}}>{children}</main>
-       </div>
-     </div>
-   );
- }
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [isDesktop,   setIsDesktop]   = useState(window.innerWidth >= 768);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  const dropRef = useRef(null);
+
+  useEffect(()=>{
+    const h = e => { if(dropRef.current && !dropRef.current.contains(e.target)) setProfileOpen(false); };
+    const r = () => {
+      const desktop = window.innerWidth >= 768;
+      setIsDesktop(desktop);
+      if(desktop) setSidebarOpen(true);
+    };
+    document.addEventListener("mousedown", h);
+    window.addEventListener("resize", r);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      window.removeEventListener("resize", r);
+    };
+  },[]);
+
+  return (
+    <div style={{display:"flex",minHeight:"100vh",background:T.navy}}>
+      <style>{globalCSS}</style>
+
+      {/* Mobile overlay — dims background when sidebar is open on small screens */}
+      {sidebarOpen && !isDesktop && (
+        <div onClick={()=>setSidebarOpen(false)} style={{
+          position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:99
+        }}/>
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside style={{
+        width:240, background:T.navyMid,
+        borderRight:`1px solid rgba(255,255,255,0.06)`,
+        display:"flex", flexDirection:"column",
+        position:"fixed", top:0, bottom:0, left:0, zIndex:100,
+        transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.25s ease",
+      }}>
+        {/* Logo */}
+        <div style={{padding:"24px 20px",borderBottom:`1px solid rgba(255,255,255,0.06)`}}>
+          <div style={{...s.flex(10,"row","center")}}>
+            <div style={{
+              width:38,height:38,borderRadius:10,
+              background:`linear-gradient(135deg,${T.accent},${T.accentLight})`,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:18,fontWeight:900,flexShrink:0
+            }}>W</div>
+            <div>
+              <div style={{fontWeight:800,fontSize:16,letterSpacing:-0.5}}>WorkMax</div>
+              <div style={{...s.sub,fontSize:11}}>
+                {user.role==="global_admin"?"Global Platform":user.role==="company_admin"?"Admin Panel":"Employee Portal"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav items */}
+        <nav style={{flex:1,padding:"16px 12px",overflowY:"auto"}}>
+          {navItems.map(item=>{
+            const active = activeNav === item.id;
+            return (
+              <button key={item.id}
+                onClick={()=>{ setActiveNav(item.id); if(!isDesktop) setSidebarOpen(false); }}
+                style={{
+                  display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",
+                  background: active ? `${T.accent}22` : "transparent",
+                  color: active ? T.accentLight : T.gray400,
+                  border: active ? `1px solid ${T.accent}33` : "1px solid transparent",
+                  borderRadius:10, marginBottom:4, cursor:"pointer", textAlign:"left",
+                  fontWeight: active ? 700 : 500, fontSize:14, transition:"all 0.15s",
+                }}>
+                <span style={{color: active ? T.accentLight : T.gray400}}>{item.icon}</span>
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* User info bottom */}
+        <div style={{padding:"16px",borderTop:`1px solid rgba(255,255,255,0.06)`,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{
+            width:36,height:36,borderRadius:10,
+            background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:14,fontWeight:700,flexShrink:0
+          }}>{user.avatar}</div>
+          <div style={{flex:1,overflow:"hidden"}}>
+            <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.name}</div>
+            <div style={{fontSize:11,color:T.gray400,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.email}</div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main area ── */}
+      <div style={{marginLeft: isDesktop && sidebarOpen ? 240 : 0, flex:1, display:"flex", flexDirection:"column", transition:"margin-left 0.25s ease"}}>
+        <header style={{
+          background:T.navyMid, borderBottom:`1px solid rgba(255,255,255,0.06)`,
+          padding:"0 16px", height:64,
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          position:"sticky", top:0, zIndex:50,
+        }}>
+          {/* Left side: hamburger + page title */}
+          <div style={{display:"flex",alignItems:"center",gap:10,flex:1,overflow:"hidden"}}>
+            <button onClick={()=>setSidebarOpen(v=>!v)} style={{
+              background:"rgba(255,255,255,0.06)", border:"none", borderRadius:8,
+              width:36, height:36, color:T.white, fontSize:20, cursor:"pointer",
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+            }}>☰</button>
+            <h1 style={{...s.h2,fontSize:16,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              {navItems.find(n=>n.id===activeNav)?.label||""}
+            </h1>
+          </div>
+
+          {/* Right side: profile dropdown (employees) or logout (admins) */}
+          {user.role==="employee" && (
+            <div ref={dropRef} style={{position:"relative"}}>
+              <button onClick={()=>setProfileOpen(v=>!v)} style={{
+                ...s.flex(8,"row","center"),
+                background:"rgba(255,255,255,0.05)", border:`1px solid rgba(255,255,255,0.1)`,
+                borderRadius:10, padding:"7px 14px", color:T.white, fontSize:14, fontWeight:600,
+              }}>
+                <div style={{
+                  width:28, height:28, borderRadius:8,
+                  background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:12, fontWeight:700,
+                }}>{user.avatar}</div>
+                {user.name.split(" ")[0]} ▾
+              </button>
+              {profileOpen && (
+                <div style={{
+                  position:"absolute", right:0, top:"calc(100% + 8px)",
+                  background:T.navyMid, border:`1px solid rgba(255,255,255,0.1)`,
+                  borderRadius:12, minWidth:180,
+                  boxShadow:"0 8px 32px rgba(0,0,0,0.4)", overflow:"hidden",
+                  animation:"fadeIn 0.15s ease",
+                }}>
+                  {[
+                    {id:"profile", label:"My Profile", icon:<Icon.Profile/>},
+                    {id:"stats",   label:"My Stats",   icon:<Icon.Stats/>},
+                  ].map(item=>(
+                    <button key={item.id}
+                      onClick={()=>{ setActiveNav(item.id); setProfileOpen(false); }}
+                      style={{
+                        display:"flex", alignItems:"center", gap:10, width:"100%",
+                        padding:"12px 16px", background:"none", border:"none",
+                        color:T.white, cursor:"pointer", fontSize:14, textAlign:"left",
+                      }}
+                      onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}
+                      onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                      <span style={{color:T.gray400}}>{item.icon}</span>{item.label}
+                    </button>
+                  ))}
+                  <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
+                  <button onClick={onLogout}
+                    style={{
+                      display:"flex", alignItems:"center", gap:10, width:"100%",
+                      padding:"12px 16px", background:"none", border:"none",
+                      color:T.danger, cursor:"pointer", fontSize:14, textAlign:"left",
+                    }}
+                    onMouseEnter={e=>e.currentTarget.style.background="rgba(239,68,68,0.08)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                    <Icon.Logout/>Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {user.role !== "employee" && (
+            <button onClick={onLogout} style={{...s.btn("rgba(255,255,255,0.06)",T.gray400),fontSize:13}}>
+              <Icon.Logout/>Logout
+            </button>
+          )}
+        </header>
+
+        {/* Page content */}
+        <main style={{flex:1, padding:28, overflowY:"auto"}}>{children}</main>
+      </div>
+    </div>
+  );
+}
  
  // ─── STAT CARD ────────────────────────────────────────────────────────────────
  function StatCard({label,value,sub,color=T.accent,icon}) {
@@ -725,7 +829,7 @@ new Promise(resolve => {
    const [locationMetres,  setLocationMetres]  = useState(null);
  
    const todayStr       = today();
-   const isBeforeCutoff = nowHour() < 22; // check-in window closes at 5pm midday
+   const isBeforeCutoff = nowHour() < 17; // check-in window closes at 5pm midday
    const days           = daysInMonth(calYear,calMonth);
    const firstDay       = firstDayOfMonth(calYear,calMonth);
    const monthNames     = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -762,25 +866,25 @@ new Promise(resolve => {
  
    return (
      <div className="fade-in">
-       <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
+       <div style={{...s.flex(16,"row","stretch"),marginBottom:10,flexWrap:"wrap"}}>
          <StatCard label="Status Today"   value={todayAtt?"Present":"Absent"} color={todayAtt?T.success:T.danger} icon={<Icon.Check/>} sub={todayAtt?`In: ${todayAtt.checkIn}`:"Not checked in"}/>
          <StatCard label="This Month"     value={data.attendance.filter(a=>a.userId===user.id&&a.date.startsWith(`${calYear}-${String(calMonth+1).padStart(2,"0")}`)).length} color={T.accent} icon={<Icon.Clock/>} sub="days present"/>
          <StatCard label="Pending Leaves" value={data.leaves.filter(l=>l.userId===user.id&&l.status==="pending").length} color={T.warning} icon={<Icon.Leave/>} sub="awaiting approval"/>
        </div>
  
        {/* Calendar */}
-       <div style={{...s.card}}>
-         <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:20}}>
+       <div style={{...s.card, padding:8}}>
+         <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:6}}>
            <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>‹</button>
            <span style={{...s.h3,fontSize:18}}>{monthNames[calMonth]} {calYear}</span>
            <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>›</button>
          </div>
-         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
-           {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
-             <div key={d} style={{textAlign:"center",...s.sub,fontSize:12,fontWeight:700,padding:"6px 0"}}>{d}</div>
-           ))}
+         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+             <div key={d} style={{textAlign:"center",...s.sub,fontSize:10,fontWeight:700,padding:"4px 0"}}>{d}</div>
+            ))}
          </div>
-         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
            {Array(firstDay).fill(null).map((_,i)=><div key={"e"+i}/>)}
            {Array(days).fill(null).map((_,i)=>{
              const d=i+1;
@@ -797,9 +901,9 @@ new Promise(resolve => {
              return (
                <div key={d}
                  onClick={isToday?()=>{setDayModal(dateStr);setFaceOk(false);setCheckDone(false);setLocationStatus("idle");setLocationMetres(null);}:undefined}
-                 style={{aspectRatio:"1",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",
-                   justifyContent:"center",background:bg,border,color:textColor,
-                   cursor:isToday?"pointer":"default",transition:"all 0.15s",fontSize:14,fontWeight:isToday?800:500,position:"relative"}}>
+                 style={{height:95,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",
+                  justifyContent:"center",background:bg,border,color:textColor,
+                  cursor:isToday?"pointer":"default",transition:"all 0.15s",fontSize:12,fontWeight:isToday?800:500,position:"relative"}}>
                  {d}
                  {att&&<div style={{width:6,height:6,borderRadius:"50%",background:att.status==="present"?T.success:att.status==="late"?T.warning:T.danger,position:"absolute",bottom:4}}/>}
                </div>
