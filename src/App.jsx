@@ -69,11 +69,11 @@
   companies: [
     {
       id:"c1", name:"RM Tech", industry:"Technology", size:120, plan:"Enterprise",
-      lat:-23.999447, lng:29.649635, checkinRadius:40,
+      lat:-23.999447, lng:29.649635, checkinRadius:150,
     },
     {
       id:"c2", name:"MTL Tladi Accountants", industry:"Accounting", size:45, plan:"Pro",
-      lat:-23.9124868, lng:29.4546655, checkinRadius:70,
+      lat:-23.9124868, lng:29.4546655, checkinRadius:150,
     },
   ],
 
@@ -104,23 +104,63 @@
  };
  
  /**
-  * checkDeviceLocation — wraps navigator.geolocation in a Promise.
-  * Returns { status, distance } — never throws.
-  * status: 'approved' | 'out_of_range' | 'permission_denied' | 'unavailable' | 'no_office'
-  */
- const checkDeviceLocation = (officeLat, officeLng, radiusMeters=200) =>
-   new Promise(resolve => {
-     if (officeLat==null||officeLng==null) return resolve({status:"no_office",distance:null});
-     if (!navigator.geolocation)           return resolve({status:"unavailable",distance:null});
-     navigator.geolocation.getCurrentPosition(
-       pos => {
-         const dist = haversineDistance(pos.coords.latitude,pos.coords.longitude,officeLat,officeLng);
-         resolve({status:dist<=radiusMeters?"approved":"out_of_range", distance:Math.round(dist)});
-       },
-       () => resolve({status:"permission_denied",distance:null}),
-       {enableHighAccuracy:true, timeout:10000, maximumAge:0}
-     );
-   });
+ * checkDeviceLocation — improved version
+ * Takes up to 3 GPS readings and uses the one with the best accuracy.
+ * This handles the common case where the first GPS reading from a cold
+ * start is inaccurate due to the device still locking onto satellites.
+ *
+ * status: 'approved' | 'out_of_range' | 'permission_denied' | 'unavailable' | 'no_office'
+ */
+const checkDeviceLocation = (officeLat, officeLng, radiusMeters=200) =>
+new Promise(resolve => {
+  if (officeLat==null||officeLng==null) return resolve({status:"no_office",distance:null});
+  if (!navigator.geolocation)           return resolve({status:"unavailable",distance:null});
+
+  const readings = [];
+  let attempts   = 0;
+  const MAX      = 3;
+
+  const processReading = (pos) => {
+    readings.push({
+      lat:      pos.coords.latitude,
+      lng:      pos.coords.longitude,
+      accuracy: pos.coords.accuracy, // metres — lower is better
+    });
+    attempts++;
+
+    if (attempts < MAX) {
+      // Request another reading to build up a set
+      navigator.geolocation.getCurrentPosition(processReading, finish,
+        {enableHighAccuracy:true, timeout:6000, maximumAge:0});
+    } else {
+      finish();
+    }
+  };
+
+  const finish = () => {
+    if (readings.length === 0) {
+      resolve({status:"permission_denied", distance:null});
+      return;
+    }
+    // Pick the reading with the best (lowest) accuracy value
+    const best = readings.reduce((a,b) => a.accuracy < b.accuracy ? a : b);
+    const dist = haversineDistance(best.lat, best.lng, officeLat, officeLng);
+
+    // If device accuracy itself is worse than radius, warn but still allow
+    // (prevents false rejections when GPS signal is poor indoors)
+    const effectiveRadius = Math.max(radiusMeters, best.accuracy * 0.8);
+
+    resolve({
+      status:   dist <= effectiveRadius ? "approved" : "out_of_range",
+      distance: Math.round(dist),
+      accuracy: Math.round(best.accuracy),
+    });
+  };
+
+  // Start first reading
+  navigator.geolocation.getCurrentPosition(processReading, finish,
+    {enableHighAccuracy:true, timeout:8000, maximumAge:0});
+});
  
  // ─── GLOBAL CSS ───────────────────────────────────────────────────────────────
  const globalCSS = `
@@ -676,6 +716,7 @@
    const now=new Date();
    const [calYear,       setCalYear]       = useState(now.getFullYear());
    const [calMonth,      setCalMonth]      = useState(now.getMonth());
+   const [locationAccuracy, setLocationAccuracy] = useState(null);
    const [dayModal,      setDayModal]      = useState(null);
    const [faceOk,        setFaceOk]        = useState(false);
    const [checkDone,     setCheckDone]     = useState(false);
@@ -696,8 +737,12 @@
      if(!dayModal) return;
      setLocationStatus("checking"); setLocationMetres(null);
      const company = data.companies.find(c=>c.id===user.company);
-     checkDeviceLocation(company?.lat??null, company?.lng??null, company?.checkinRadius??200)
-       .then(({status,distance})=>{setLocationStatus(status);setLocationMetres(distance);});
+     checkDeviceLocation(company?.lat??null, company?.lng??null, company?.checkinRadius??150)
+       .then(({status,distance,accuracy})=>{
+         setLocationStatus(status);
+         setLocationMetres(distance);
+         setLocationAccuracy(accuracy??null);
+      });
    },[dayModal]);
  
    // Check-in requires face AND location both approved
@@ -807,8 +852,8 @@
                          <div style={{...s.sub,fontSize:11,marginTop:2}}>
                            {locationStatus==="idle"             &&"Detecting your location…"}
                            {locationStatus==="checking"         &&"Checking distance to office…"}
-                           {locationStatus==="approved"         &&`✓ Within office radius${locationMetres!=null?` (${locationMetres}m away)`:""}`}
-                           {locationStatus==="out_of_range"     &&`✕ Too far from office${locationMetres!=null?` — ${locationMetres}m away`:""}`}
+                           {locationStatus==="approved" && `✓ Within office radius (${locationMetres}m away${locationAccuracy!=null?`, GPS ±${locationAccuracy}m`:""})`}
+{locationStatus==="out_of_range" && `✕ ${locationMetres}m from office — need to be within ${data.companies.find(c=>c.id===user.company)?.checkinRadius||150}m`}
                            {locationStatus==="permission_denied"&&"✕ Location permission denied — enable in browser settings"}
                            {locationStatus==="unavailable"      &&"✕ Geolocation not supported on this device"}
                            {locationStatus==="no_office"        &&"⚠ No office coordinates configured — location check skipped"}
