@@ -118,7 +118,7 @@ new Promise(resolve => {
 
   const readings = [];
   let attempts   = 0;
-  const MAX      = 3;
+  const MAX      = 5;
 
   const processReading = (pos) => {
     readings.push({
