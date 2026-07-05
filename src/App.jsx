@@ -832,7 +832,7 @@ new Promise(resolve => {
    const [locationMetres,  setLocationMetres]  = useState(null);
  
    const todayStr       = today();
-   const isBeforeCutoff = nowHour() < 22; // check-in window closes at 5pm midday
+   const isBeforeCutoff = nowHour() < 24; // check-in window closes at 5pm midday
    const days           = daysInMonth(calYear,calMonth);
    const firstDay       = firstDayOfMonth(calYear,calMonth);
    const monthNames     = ["January","February","March","April","May","June","July","August","September","October","November","December"];
