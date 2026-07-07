@@ -24,7 +24,7 @@
   fetchAllEmployees, createAdminInDB, createCompanyInDB, createEmployeeInDB,
   deleteAdminFromDB, deleteEmployeeFromDB, toggleBlockAdminInDB,
   toggleBlockEmployeeInDB, updateAdminPasswordInDB, updateEmployeePasswordInDB,
-  updateEmployeePersonalEmailInDB,
+  updateEmployeePersonalEmailInDB,updateEmployeeFaceInDB,
   fetchLeaves, fetchAllLeaves, createLeaveInDB, updateLeaveInDB,
   fetchAttendance, fetchAllAttendance, createAttendanceInDB,
   fetchPayslips, fetchAllPayslips, createPayslipInDB, updatePayslipInDB } from './db'
@@ -315,12 +315,12 @@ new Promise(resolve => {
  
    // Load face-api.js models from official CDN — cached after first download
    useEffect(()=>{
-     const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
-     Promise.all([
-       faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-       faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
-       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-     ])
+    const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+    Promise.all([
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),   // full-accuracy detector
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL), // full-accuracy landmarks
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ])
        .then(()=>{setPhase("idle");setLoadStatus("");})
        .catch(()=>{setPhase("error");setLoadStatus("Failed to load AI models. Check internet.");});
      return ()=>{if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());};
@@ -347,10 +347,10 @@ new Promise(resolve => {
      setPhase("scanning");
      await new Promise(r=>setTimeout(r,800)); // let frame stabilise
      try {
-       const detection = await faceapi
-         .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({scoreThreshold:0.4}))
-         .withFaceLandmarks(true)
-         .withFaceDescriptor();
+      const detection = await faceapi
+      .detectSingleFace(videoRef.current, new faceapi.SsdMobilenetv1Options({minConfidence:0.5}))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
        if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());
        if(!detection){
          setPhase("denied"); onDenied?.();
@@ -418,101 +418,187 @@ new Promise(resolve => {
   * FaceCapture — camera + file upload widget for enrolling an employee's face.
   * Produces a base64 image stored on the employee record.
   */
- function FaceCapture({onCapture,onClear}) {
-   const fileInputRef=useRef(null), videoRef=useRef(null);
-   const canvasRef=useRef(null),    streamRef=useRef(null);
-   const [mode,    setMode]    = useState("idle");
-   const [preview, setPreview] = useState(null);
-   const [camErr,  setCamErr]  = useState("");
- 
-   const stopCam = useCallback(()=>{
-     if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;}
-   },[]);
- 
-   useEffect(()=>{
-     if(mode==="camera"&&videoRef.current&&streamRef.current)
-       videoRef.current.srcObject=streamRef.current;
-   },[mode]);
-   useEffect(()=>()=>stopCam(),[]);
- 
-   const openCamera = async ()=>{
-     setCamErr("");
-     try {
-       const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:640},height:{ideal:480}}});
-       streamRef.current=stream; setMode("camera");
-     } catch { setCamErr("Camera access denied. Please allow camera or upload a photo instead."); }
-   };
- 
-   const capturePhoto = ()=>{
-     const video=videoRef.current, canvas=canvasRef.current;
-     if(!video||!canvas) return;
-     canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
-     canvas.getContext("2d").drawImage(video,0,0);
-     const base64=canvas.toDataURL("image/jpeg",0.85);
-     stopCam(); setPreview(base64); setMode("preview"); onCapture?.(base64);
-   };
- 
-   const handleUpload = e=>{
-     const file=e.target.files?.[0]; if(!file) return;
-     if(!["image/jpeg","image/jpg","image/png","image/webp"].includes(file.type)){setCamErr("Only JPG, PNG or WEBP accepted.");return;}
-     if(file.size>5*1024*1024){setCamErr("Image must be under 5 MB.");return;}
-     const reader=new FileReader();
-     reader.onload=ev=>{const b64=ev.target.result;setPreview(b64);setMode("preview");onCapture?.(b64,file);};
-     reader.readAsDataURL(file);
-   };
- 
-   return (
-     <div style={{...s.card,background:"rgba(255,255,255,0.03)",border:`1px dashed rgba(255,255,255,0.12)`,padding:20,textAlign:"center"}}>
-       <p style={{...s.sub,fontSize:12,fontWeight:700,marginBottom:14,textTransform:"uppercase",letterSpacing:0.8}}>
-         Employee Face Registration
-       </p>
-       {mode==="idle"&&(
-         <>
-           <div style={{...s.flex(10,"row","center"),justifyContent:"center",marginBottom:12}}>
-             <button onClick={openCamera} style={{...s.btn(T.accent),fontSize:13,padding:"9px 18px",borderRadius:10}}><Icon.Camera/>Open Camera</button>
-             <button onClick={()=>fileInputRef.current?.click()} style={{...s.btn("rgba(255,255,255,0.08)",T.white),fontSize:13,padding:"9px 18px",borderRadius:10}}>↑ Upload Photo</button>
-           </div>
-           <p style={{fontSize:11,color:T.gray400}}>JPG, PNG or WEBP · max 5 MB</p>
-           <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleUpload} style={{display:"none"}}/>
-           {camErr&&<p style={{fontSize:12,color:T.danger,marginTop:10}}>{camErr}</p>}
-         </>
-       )}
-       {mode==="camera"&&(
-         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
-           <div style={{position:"relative",borderRadius:12,overflow:"hidden",border:`2px solid ${T.accent}`,boxShadow:`0 0 20px ${T.accent}44`,width:"100%",maxWidth:280}}>
-             <video ref={videoRef} autoPlay muted playsInline style={{width:"100%",display:"block",borderRadius:10}}/>
-             <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-               <svg width="120" height="140" viewBox="0 0 120 140" style={{opacity:0.5}}>
-                 <ellipse cx="60" cy="70" rx="45" ry="55" fill="none" stroke={T.accentLight} strokeWidth="2" strokeDasharray="6 4"/>
-               </svg>
-             </div>
-             <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"6px",background:"rgba(0,0,0,0.6)",textAlign:"center",fontSize:11,fontWeight:700,color:T.accentLight,letterSpacing:0.8}}>ALIGN FACE IN OVAL</div>
-           </div>
-           <canvas ref={canvasRef} style={{display:"none"}}/>
-           <div style={{...s.flex(10,"row","center")}}>
-             <button onClick={capturePhoto} style={{...s.btn(T.success),fontSize:13,padding:"9px 20px",borderRadius:10,boxShadow:`0 4px 12px ${T.success}44`}}><Icon.Camera/>Take Photo</button>
-             <button onClick={()=>{stopCam();setMode("idle");}} style={{...s.btn("rgba(255,255,255,0.07)",T.gray400),fontSize:13,padding:"9px 16px",borderRadius:10}}>Cancel</button>
-           </div>
-         </div>
-       )}
-       {mode==="preview"&&preview&&(
-         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
-           <div style={{position:"relative",display:"inline-block"}}>
-             <img src={preview} alt="Face preview" style={{width:140,height:140,objectFit:"cover",borderRadius:12,border:`3px solid ${T.success}`,boxShadow:`0 0 20px ${T.success}44`}}/>
-             <div style={{position:"absolute",bottom:-6,right:-6,width:28,height:28,borderRadius:"50%",background:T.success,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon.Check/></div>
-           </div>
-           <p style={{fontSize:13,fontWeight:700,color:T.success}}>✓ Face image captured</p>
-           <p style={{...s.sub,fontSize:11}}>Used for facial recognition during check-in.</p>
-           <div style={{...s.flex(8,"row","center")}}>
-             <button onClick={()=>{stopCam();setMode("idle");setPreview(null);onClear?.();}} style={s.btnSm("rgba(255,255,255,0.07)",T.gray400)}>Retake</button>
-             <button onClick={()=>fileInputRef.current?.click()} style={s.btnSm("rgba(255,255,255,0.07)",T.gray400)}>Upload Different</button>
-           </div>
-           <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleUpload} style={{display:"none"}}/>
-         </div>
-       )}
-     </div>
-   );
- }
+  function FaceCapture({onCapture,onClear}) {
+    const fileInputRef=useRef(null), videoRef=useRef(null);
+    const canvasRef=useRef(null),    streamRef=useRef(null);
+    const [mode,        setMode]        = useState("idle"); // idle | camera | preview
+    const [preview,      setPreview]     = useState(null);
+    const [camErr,       setCamErr]      = useState("");
+    const [modelsReady,  setModelsReady] = useState(false);
+    const [descriptors,  setDescriptors] = useState([]); // collected shots
+    const REQUIRED_SHOTS = 3;
+  
+    // Load models once — same model set used during check-in for consistency
+    useEffect(()=>{
+      const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+      Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]).then(()=>setModelsReady(true))
+        .catch(()=>setCamErr("Failed to load face models. Check your internet connection."));
+    },[]);
+  
+    const stopCam = useCallback(()=>{
+      if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;}
+    },[]);
+  
+    useEffect(()=>{
+      if(mode==="camera"&&videoRef.current&&streamRef.current)
+        videoRef.current.srcObject=streamRef.current;
+    },[mode]);
+    useEffect(()=>()=>stopCam(),[]);
+  
+    const openCamera = async ()=>{
+      if(!modelsReady){ setCamErr("Face models still loading, please wait a moment…"); return; }
+      setCamErr("");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:640},height:{ideal:480}}});
+        streamRef.current=stream; setMode("camera");
+      } catch { setCamErr("Camera access denied. Please allow camera or upload a photo instead."); }
+    };
+  
+    const extractDescriptor = async (source) => {
+      const detection = await faceapi
+        .detectSingleFace(source, new faceapi.SsdMobilenetv1Options({minConfidence:0.5}))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+      return detection?.descriptor || null;
+    };
+  
+    const capturePhoto = async ()=>{
+      const video=videoRef.current, canvas=canvasRef.current;
+      if(!video||!canvas) return;
+      canvas.width=video.videoWidth||640; canvas.height=video.videoHeight||480;
+      canvas.getContext("2d").drawImage(video,0,0);
+      const base64=canvas.toDataURL("image/jpeg",0.85);
+  
+      setCamErr("");
+      const descriptor = await extractDescriptor(video);
+      if(!descriptor){
+        setCamErr("No face detected in that shot. Ensure good lighting and try again.");
+        return;
+      }
+      const updated = [...descriptors, descriptor];
+      setDescriptors(updated);
+      setPreview(base64);
+  
+      if(updated.length >= REQUIRED_SHOTS){
+        finishEnrollment(updated, base64);
+      }
+    };
+  
+    // Averages all collected descriptors element-wise into one reference descriptor
+    const finishEnrollment = (allDescriptors, base64Preview) => {
+      const len = allDescriptors[0].length;
+      const avg = new Float32Array(len);
+      allDescriptors.forEach(d => { for(let i=0;i<len;i++) avg[i]+=d[i]; });
+      for(let i=0;i<len;i++) avg[i]/=allDescriptors.length;
+  
+      stopCam();
+      setMode("preview");
+      onCapture?.(base64Preview, Array.from(avg));
+    };
+  
+    const handleUpload = e=>{
+      const file=e.target.files?.[0]; if(!file) return;
+      if(!["image/jpeg","image/jpg","image/png","image/webp"].includes(file.type)){setCamErr("Only JPG, PNG or WEBP accepted.");return;}
+      if(file.size>5*1024*1024){setCamErr("Image must be under 5 MB.");return;}
+      if(!modelsReady){ setCamErr("Face models still loading, please wait a moment…"); return; }
+  
+      const reader=new FileReader();
+      reader.onload=ev=>{
+        const b64=ev.target.result;
+        const img=new Image();
+        img.onload=async ()=>{
+          const descriptor = await extractDescriptor(img);
+          if(!descriptor){
+            setCamErr("No face detected in that photo. Please upload a clear front-facing photo.");
+            return;
+          }
+          setCamErr("");
+          setPreview(b64);
+          setMode("preview");
+          setDescriptors([descriptor]);
+          onCapture?.(b64, Array.from(descriptor));
+        };
+        img.src=b64;
+      };
+      reader.readAsDataURL(file);
+    };
+  
+    const reset = () => {
+      stopCam();
+      setMode("idle"); setPreview(null); setDescriptors([]); setCamErr("");
+      if(fileInputRef.current) fileInputRef.current.value="";
+      onClear?.();
+    };
+  
+    return (
+      <div style={{...s.card,background:"rgba(255,255,255,0.03)",border:`1px dashed rgba(255,255,255,0.12)`,padding:20,textAlign:"center"}}>
+        <p style={{...s.sub,fontSize:12,fontWeight:700,marginBottom:14,textTransform:"uppercase",letterSpacing:0.8}}>
+          Employee Face Registration
+        </p>
+  
+        {mode==="idle"&&(
+          <>
+            {!modelsReady && (
+              <div style={{...s.flex(8,"row","center"),justifyContent:"center",marginBottom:12}}>
+                <span className="spin" style={{display:"inline-block",width:14,height:14,border:`2px solid rgba(255,255,255,0.2)`,borderTopColor:T.accentLight,borderRadius:"50%"}}/>
+                <span style={{...s.sub,fontSize:12}}>Loading face recognition models…</span>
+              </div>
+            )}
+            <div style={{...s.flex(10,"row","center"),justifyContent:"center",marginBottom:12}}>
+              <button onClick={openCamera} disabled={!modelsReady} style={{...s.btn(T.accent),fontSize:13,padding:"9px 18px",borderRadius:10,opacity:modelsReady?1:0.5}}><Icon.Camera/>Open Camera</button>
+              <button onClick={()=>fileInputRef.current?.click()} disabled={!modelsReady} style={{...s.btn("rgba(255,255,255,0.08)",T.white),fontSize:13,padding:"9px 18px",borderRadius:10,opacity:modelsReady?1:0.5}}>↑ Upload Photo</button>
+            </div>
+            <p style={{fontSize:11,color:T.gray400}}>Camera captures 3 shots for accuracy · JPG/PNG/WEBP max 5MB for upload</p>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleUpload} style={{display:"none"}}/>
+            {camErr&&<p style={{fontSize:12,color:T.danger,marginTop:10}}>{camErr}</p>}
+          </>
+        )}
+  
+        {mode==="camera"&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
+            <div style={{position:"relative",borderRadius:12,overflow:"hidden",border:`2px solid ${T.accent}`,boxShadow:`0 0 20px ${T.accent}44`,width:"100%",maxWidth:280}}>
+              <video ref={videoRef} autoPlay muted playsInline style={{width:"100%",display:"block",borderRadius:10}}/>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                <svg width="120" height="140" viewBox="0 0 120 140" style={{opacity:0.5}}>
+                  <ellipse cx="60" cy="70" rx="45" ry="55" fill="none" stroke={T.accentLight} strokeWidth="2" strokeDasharray="6 4"/>
+                </svg>
+              </div>
+              <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"6px",background:"rgba(0,0,0,0.6)",textAlign:"center",fontSize:11,fontWeight:700,color:T.accentLight,letterSpacing:0.8}}>
+                SHOT {descriptors.length+1} OF {REQUIRED_SHOTS} — ALIGN FACE IN OVAL
+              </div>
+            </div>
+            <canvas ref={canvasRef} style={{display:"none"}}/>
+            <div style={{...s.flex(6,"row","center")}}>
+              {Array(REQUIRED_SHOTS).fill(null).map((_,i)=>(
+                <div key={i} style={{width:8,height:8,borderRadius:"50%",background:i<descriptors.length?T.success:"rgba(255,255,255,0.2)"}}/>
+              ))}
+            </div>
+            <div style={{...s.flex(10,"row","center")}}>
+              <button onClick={capturePhoto} style={{...s.btn(T.success),fontSize:13,padding:"9px 20px",borderRadius:10,boxShadow:`0 4px 12px ${T.success}44`}}><Icon.Camera/>Capture Shot {descriptors.length+1}</button>
+              <button onClick={reset} style={{...s.btn("rgba(255,255,255,0.07)",T.gray400),fontSize:13,padding:"9px 16px",borderRadius:10}}>Cancel</button>
+            </div>
+            {camErr&&<p style={{fontSize:12,color:T.danger}}>{camErr}</p>}
+          </div>
+        )}
+  
+        {mode==="preview"&&preview&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
+            <div style={{position:"relative",display:"inline-block"}}>
+              <img src={preview} alt="Face preview" style={{width:140,height:140,objectFit:"cover",borderRadius:12,border:`3px solid ${T.success}`,boxShadow:`0 0 20px ${T.success}44`}}/>
+              <div style={{position:"absolute",bottom:-6,right:-6,width:28,height:28,borderRadius:"50%",background:T.success,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon.Check/></div>
+            </div>
+            <p style={{fontSize:13,fontWeight:700,color:T.success}}>✓ Face profile captured ({descriptors.length} shot{descriptors.length>1?"s":""} averaged)</p>
+            <p style={{...s.sub,fontSize:11}}>Used for facial recognition during check-in.</p>
+            <button onClick={reset} style={s.btnSm("rgba(255,255,255,0.07)",T.gray400)}>Retake</button>
+          </div>
+        )}
+      </div>
+    );
+  }
  
  // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
  function LoginScreen({onLogin}) {
@@ -857,12 +943,14 @@ new Promise(resolve => {
     if(!faceOk) return;
     const locPassed = locationStatus==="approved"||locationStatus==="no_office";
     if(!locPassed) return;
-    const time = new Date().toTimeString().slice(0,5);
-    const rec  = {id:genId(),userId:user.id,date:todayStr,checkIn:time,checkOut:null,status:"present",locationVerified:locationStatus==="approved"};
+    const now    = new Date();
+    const time   = now.toTimeString().slice(0,5);
+    const status = now.getHours() < 9 ? "present" : "late"; // The start of late
+    const rec  = {id:genId(),userId:user.id,date:todayStr,checkIn:time,checkOut:null,status,locationVerified:locationStatus==="approved"};
     await createAttendanceInDB(rec, user.company);   // save to database
     setData(d=>({...d,attendance:[...d.attendance,rec]}));
     setCheckDone(true);
-    toast("Check-in recorded at "+time,"success");
+    toast(`Check-in recorded at ${time}${status==="late"?" (late)":""}`,"success");
     setTimeout(()=>setDayModal(null),1500);
    };
  
@@ -929,14 +1017,14 @@ new Promise(resolve => {
            {todayAtt?(
              <div style={{textAlign:"center",padding:"16px 0"}}>
                <div style={{fontSize:40,marginBottom:12}}>✅</div>
-               <p style={s.h3}>Already checked in today</p>
+               <p style={s.h3}>Time to clock in has already passed.</p>
                <p style={{...s.sub,marginTop:8}}>Check-in: {todayAtt.checkIn} · Auto checkout: 16:00</p>
              </div>
            ):(
              <>
                {!isBeforeCutoff&&(
                  <div style={{...s.badge(T.warning),fontSize:13,padding:"10px 16px",marginBottom:20,display:"block",textAlign:"center"}}>
-                   ⚠ Check-in window closed — after 10:00 AM
+                   ⚠ Check-in window closed at 12:00 AM
                  </div>
                )}
                {isBeforeCutoff&&(
@@ -961,10 +1049,15 @@ new Promise(resolve => {
                            {locationStatus==="idle"             &&"Detecting your location…"}
                            {locationStatus==="checking"         &&"Checking distance to office…"}
                            {locationStatus==="approved" && `✓ Within office radius (${locationMetres}m away${locationAccuracy!=null?`, GPS ±${locationAccuracy}m`:""})`}
-{locationStatus==="out_of_range" && `✕ ${locationMetres}m from office — need to be within ${data.companies.find(c=>c.id===user.company)?.checkinRadius||150}m`}
+                           {locationStatus==="out_of_range" && `✕ ${locationMetres}m from office — need to be within ${data.companies.find(c=>c.id===user.company)?.checkinRadius||150}m`}
                            {locationStatus==="permission_denied"&&"✕ Location permission denied — enable in browser settings"}
                            {locationStatus==="unavailable"      &&"✕ Geolocation not supported on this device"}
                            {locationStatus==="no_office"        &&"⚠ No office coordinates configured — location check skipped"}
+                           {locationStatus!=="idle" && locationStatus!=="checking" && (
+                           <div style={{...s.sub, fontSize:10, marginTop:4, opacity:0.6, fontFamily:"monospace"}}>
+                             Office: {data.companies.find(c=>c.id===user.company)?.lat}, {data.companies.find(c=>c.id===user.company)?.lng}
+                           </div>
+                           )}
                          </div>
                        </div>
                      </div>
@@ -983,7 +1076,11 @@ new Promise(resolve => {
  
                    {/* Face Scanner */}
                    <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
-                     <FaceScanner onApproved={()=>setFaceOk(true)}/>
+                   <FaceScanner
+                      registeredDescriptor={user.faceDescriptor}
+                      onApproved={()=>setFaceOk(true)}
+                      onDenied={()=>toast("Face not recognized. Please try again.","error")}
+                    />
                    </div>
  
                    {/* Check-in Button — only active when both pass */}
@@ -1382,41 +1479,60 @@ new Promise(resolve => {
  
  // ─── EMPLOYEE STATS ───────────────────────────────────────────────────────────
  function EmployeeStats({user,data}) {
-   const att=data.attendance.filter(a=>a.userId===user.id);
-   const present=att.filter(a=>a.status==="present").length;
-   const late   =att.filter(a=>a.status==="late").length;
-   const absent =att.filter(a=>a.status==="absent").length;
-   const total  =present+late+absent;
-   const rate   =total?Math.round((present/total)*100):0;
-   return (
-     <div className="fade-in">
-       <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
-         <StatCard label="Attendance Rate" value={`${rate}%`} color={rate>90?T.success:T.warning} icon={<Icon.Stats/>}/>
-         <StatCard label="Days Present"    value={present}    color={T.success} icon={<Icon.Check/>}/>
-         <StatCard label="Days Late"       value={late}       color={T.warning} icon={<Icon.Clock/>}/>
-         <StatCard label="Days Absent"     value={absent}     color={T.danger}  icon={<Icon.X/>}/>
-       </div>
-       <div style={s.card}>
-         <h3 style={{...s.h3,marginBottom:16}}>Attendance Log</h3>
-         <div style={{overflowX:"auto"}}>
-           <table style={{width:"100%",borderCollapse:"collapse"}}>
-             <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-             <tbody>
-               {att.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
-                 <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                   <td style={{padding:"10px 14px",fontSize:14}}>{fmtDate(a.date)}</td>
-                   <td style={{padding:"10px 14px",fontSize:14}}>{a.checkIn||"—"}</td>
-                   <td style={{padding:"10px 14px",fontSize:14}}>{a.checkOut||"—"}</td>
-                   <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
-                 </tr>
-               ))}
-               {att.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No attendance records yet.</td></tr>}
-             </tbody>
-           </table>
-         </div>
-       </div>
-     </div>
-   );
+  const att=data.attendance.filter(a=>a.userId===user.id);
+  const present=att.filter(a=>a.status==="present").length;
+  const late   =att.filter(a=>a.status==="late").length;
+
+  // Absent = stored absent rows (from the daily cron job) + computed absent
+  // for any past workday that has no attendance record at all
+  const countAbsentDays = () => {
+    let count=0;
+    const start=new Date((user.joinDate||today())+"T00:00:00");
+    const end  =new Date(today()+"T00:00:00");
+    if(isNaN(start.getTime())||isNaN(end.getTime())) return 0;
+    for(let d=new Date(start); d<end; d.setDate(d.getDate()+1)){
+      const day=d.getDay();
+      if(day===0||day===6) continue;
+      const ds=d.toISOString().split("T")[0];
+      const has=att.some(a=>a.date===ds);
+      if(!has) count++;
+    }
+    return count;
+  };
+
+  const absent = att.filter(a=>a.status==="absent").length + countAbsentDays();
+  const total  = present+late+absent;
+  const rate   = total?Math.round((present/total)*100):0;
+
+  return (
+    <div className="fade-in">
+      <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
+        <StatCard label="Attendance Rate" value={`${rate}%`} color={rate>90?T.success:T.warning} icon={<Icon.Stats/>}/>
+        <StatCard label="Days Present"    value={present}    color={T.success} icon={<Icon.Check/>}/>
+        <StatCard label="Days Late"       value={late}       color={T.warning} icon={<Icon.Clock/>}/>
+        <StatCard label="Days Absent"     value={absent}     color={T.danger}  icon={<Icon.X/>}/>
+      </div>
+      <div style={s.card}>
+        <h3 style={{...s.h3,marginBottom:16}}>Attendance Log</h3>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {att.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
+                <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
+                  <td style={{padding:"10px 14px",fontSize:14}}>{fmtDate(a.date)}</td>
+                  <td style={{padding:"10px 14px",fontSize:14}}>{a.checkIn||"—"}</td>
+                  <td style={{padding:"10px 14px",fontSize:14}}>{a.checkOut||"—"}</td>
+                  <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
+                </tr>
+              ))}
+              {att.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No attendance records yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
  }
  
  // ═══════════════════════════════════════════════════════════════════════════════
@@ -1427,11 +1543,10 @@ new Promise(resolve => {
  function AdminEmployees({user,data,setData,toast}) {
    const [showAdd,setShowAdd]=useState(false);
    const [viewEmp,setViewEmp]=useState(null);
+   const [reregisterEmp,setReregisterEmp]=useState(null);
    // Added companyEmail and personalEmail fields
-   const [form,setForm]=useState({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null});
- 
+   const [form,setForm]=useState({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null,faceDescriptor:null});
    const employees = data.users.filter(u=>u.role==="employee"&&u.company===user.company);
- 
    const addEmployee = async () => {
     if(!form.name||!form.email||!form.password){toast("Name, login email and password required.","error");return;}
     if(data.users.find(u=>u.email===form.email)){toast("Login email already exists.","error");return;}
@@ -1445,7 +1560,7 @@ new Promise(resolve => {
       setData(d=>({...d,users:[...d.users,newEmp]}));
       toast(`${form.name} added successfully!`,"success");
       setShowAdd(false);
-      setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null});
+      setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null, faceDescriptor:null});
     } catch(err) {
       toast(`Error saving employee: ${err.message}`,"error");
     }
@@ -1457,6 +1572,21 @@ new Promise(resolve => {
       await deleteEmployeeFromDB(emp.id);
       setData(d=>({...d,users:d.users.filter(u=>u.id!==emp.id)}));
       toast(`${emp.name} removed.`,"success");
+    } catch(err) {
+      toast(`Error: ${err.message}`,"error");
+    }
+  };
+
+  const saveReregisteredFace = async (base64, descriptor) => {
+    try {
+      await updateEmployeeFaceInDB(reregisterEmp.id, base64, descriptor);
+      setData(d=>({...d,users:d.users.map(u=>
+        u.id===reregisterEmp.id
+          ? {...u, faceRegistered:true, faceImage:base64, faceDescriptor:descriptor}
+          : u
+      )}));
+      toast(`Face re-registered for ${reregisterEmp.name}!`,"success");
+      setReregisterEmp(null);
     } catch(err) {
       toast(`Error: ${err.message}`,"error");
     }
@@ -1498,7 +1628,7 @@ new Promise(resolve => {
        </div>
  
        {showAdd&&(
-         <Modal title="Add New Employee" onClose={()=>{setShowAdd(false);setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null});}} width={560}>
+         <Modal title="Add New Employee" onClose={()=>{setShowAdd(false);setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null, faceDescriptor:null});}} width={560}>
            <div style={{display:"flex",flexDirection:"column",gap:14}}>
              {/* Account details */}
              <p style={{...s.sub,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Account Details</p>
@@ -1514,33 +1644,64 @@ new Promise(resolve => {
              </div>
              {/* Face registration */}
              <FaceCapture
-               onCapture={base64=>setForm(f=>({...f,faceRegistered:true,faceImage:base64}))}
-               onClear={()=>setForm(f=>({...f,faceRegistered:false,faceImage:null}))}
-             />
+              onCapture={(base64,descriptor)=>setForm(f=>({...f,faceRegistered:true,faceImage:base64,faceDescriptor:descriptor}))}
+              onClear={()=>setForm(f=>({...f,faceRegistered:false,faceImage:null,faceDescriptor:null}))}
+            />
              <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end",marginTop:4}}>
-               <button onClick={()=>{setShowAdd(false);setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null});}} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
+               <button onClick={()=>{setShowAdd(false);setForm({name:"",email:"",companyEmail:"",personalEmail:"",password:"",department:"",position:"",phone:"",faceRegistered:false,faceImage:null, faceDescriptor:null});}} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
                <button onClick={addEmployee} style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}>Add Employee</button>
              </div>
            </div>
          </Modal>
        )}
  
-       {viewEmp&&(
-         <Modal title="Employee Details" onClose={()=>setViewEmp(null)}>
-           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-             <div style={{...s.flex(14,"row","center"),padding:"4px 0"}}>
-               <div style={{width:56,height:56,borderRadius:14,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:800}}>{viewEmp.avatar}</div>
-               <div><div style={s.h2}>{viewEmp.name}</div><div style={{...s.sub,marginTop:4}}>{viewEmp.email}</div></div>
-             </div>
-             {[["Company Email",viewEmp.companyEmail||"—"],["Personal Email",viewEmp.personalEmail||"—"],["Department",viewEmp.department],["Position",viewEmp.position],["Phone",viewEmp.phone],["Join Date",fmtDate(viewEmp.joinDate)],["Face ID",viewEmp.faceRegistered?"Registered":"Not Registered"],["Status",viewEmp.blocked?"Blocked":"Active"]].map(([l,v])=>(
-               <div key={l} style={{...s.flex(0,"row","center"),justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                 <span style={s.sub}>{l}</span><span style={{fontSize:14,fontWeight:600}}>{v}</span>
-               </div>
-             ))}
-           </div>
-         </Modal>
-       )}
-     </div>
+ {viewEmp&&(
+        <Modal title="Employee Details" onClose={()=>setViewEmp(null)}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{...s.flex(14,"row","center"),padding:"4px 0"}}>
+              <div style={{width:56,height:56,borderRadius:14,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:800}}>{viewEmp.avatar}</div>
+              <div><div style={s.h2}>{viewEmp.name}</div><div style={{...s.sub,marginTop:4}}>{viewEmp.email}</div></div>
+            </div>
+            {[["Company Email",viewEmp.companyEmail||"—"],["Personal Email",viewEmp.personalEmail||"—"],["Department",viewEmp.department],["Position",viewEmp.position],["Phone",viewEmp.phone],["Join Date",fmtDate(viewEmp.joinDate)],["Status",viewEmp.blocked?"Blocked":"Active"]].map(([l,v])=>(
+              <div key={l} style={{...s.flex(0,"row","center"),justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                <span style={s.sub}>{l}</span><span style={{fontSize:14,fontWeight:600}}>{v}</span>
+              </div>
+            ))}
+            <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+              <span style={s.sub}>Face ID</span>
+              <div style={{...s.flex(8,"row","center")}}>
+                <span style={s.badge(viewEmp.faceRegistered?T.success:T.warning)}>{viewEmp.faceRegistered?"Registered":"Pending"}</span>
+                {viewEmp.faceRegistered&&!viewEmp.faceDescriptor&&(
+                  <span style={s.badge(T.warning)}>Needs Upgrade</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={()=>{setReregisterEmp(viewEmp);setViewEmp(null);}}
+              style={{...s.btn(T.accent),justifyContent:"center",marginTop:4}}>
+              <Icon.Camera/>{viewEmp.faceRegistered?"Re-register Face":"Register Face"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {reregisterEmp&&(
+        <Modal title={`Re-register Face — ${reregisterEmp.name}`} onClose={()=>setReregisterEmp(null)} width={480}>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",lineHeight:1.6}}>
+              Capture a fresh set of face shots for <strong>{reregisterEmp.name}</strong>. This replaces their previous face profile — the old photo and descriptor will be discarded.
+            </p>
+            <FaceCapture
+              onCapture={saveReregisteredFace}
+              onClear={()=>{}}
+            />
+            <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end"}}>
+              <button onClick={()=>setReregisterEmp(null)} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+   </div>
    );
  }
  
@@ -1578,34 +1739,7 @@ new Promise(resolve => {
      return acc;
    },[]);
  
-   const ReviewModal = ()=>reviewModal?(
-     <Modal title="Review Leave Request" onClose={()=>setReviewModal(null)}>
-       {(()=>{
-         const emp=getEmp(reviewModal.userId);
-         return (
-           <div style={{display:"flex",flexDirection:"column",gap:16}}>
-             <div style={{...s.card,background:"rgba(255,255,255,0.03)"}}>
-               {[["Employee",emp?.name],["Leave Type",reviewModal.type],["Duration",`${fmtDate(reviewModal.startDate)} → ${fmtDate(reviewModal.endDate)}`]].map(([l,v])=>(
-                 <div key={l} style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:12}}>
-                   <span style={s.sub}>{l}</span><span style={{fontWeight:700}}>{v}</span>
-                 </div>
-               ))}
-               <div><span style={s.sub}>Reason</span><p style={{marginTop:6,fontSize:14,color:"rgba(255,255,255,0.8)"}}>{reviewModal.reason}</p></div>
-             </div>
-             <div>
-               <label style={s.label}>Comment (Optional)</label>
-               <textarea value={comment} onChange={e=>setComment(e.target.value)} style={{...s.input,height:80,resize:"vertical"}} placeholder="Add a comment for the employee…"/>
-             </div>
-             <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end"}}>
-               <button onClick={()=>setReviewModal(null)} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
-               <button onClick={()=>review("denied")}   style={s.btn(`${T.danger}22`,T.danger)}><Icon.X/>Deny</button>
-               <button onClick={()=>review("approved")} style={{...s.btn(T.success),boxShadow:`0 4px 12px ${T.success}44`}}><Icon.Check/>Approve</button>
-             </div>
-           </div>
-         );
-       })()}
-     </Modal>
-   ):null;
+   
  
    return (
      <div className="fade-in">
@@ -1690,7 +1824,35 @@ new Promise(resolve => {
            </table>
          </div>
        )}
-       <ReviewModal/>
+       {reviewModal && (
+          <Modal title="Review Leave Request" onClose={()=>setReviewModal(null)}>
+            {(()=>{
+              const emp=getEmp(reviewModal.userId);
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  <div style={{...s.card,background:"rgba(255,255,255,0.03)"}}>
+                    {[["Employee",emp?.name],["Leave Type",reviewModal.type],["Duration",`${fmtDate(reviewModal.startDate)} → ${fmtDate(reviewModal.endDate)}`]].map(([l,v])=>(
+              <div key={l} style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:12}}>
+                <span style={s.sub}>{l}</span><span style={{fontWeight:700}}>{v}</span>
+              </div>
+            ))}
+            <div><span style={s.sub}>Reason</span><p style={{marginTop:6,fontSize:14,color:"rgba(255,255,255,0.8)"}}>{reviewModal.reason}</p></div>
+          </div>
+          <div>
+            <label style={s.label}>Comment (Optional)</label>
+            <textarea value={comment} onChange={e=>setComment(e.target.value)} style={{...s.input,height:80,resize:"vertical"}} placeholder="Add a comment for the employee…"/>
+          </div>
+          <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end"}}>
+            <button onClick={()=>setReviewModal(null)} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
+            <button onClick={()=>review("denied")}   style={s.btn(`${T.danger}22`,T.danger)}><Icon.X/>Deny</button>
+            <button onClick={()=>review("approved")} style={{...s.btn(T.success),boxShadow:`0 4px 12px ${T.success}44`}}><Icon.Check/>Approve</button>
+          </div>
+        </div>
+      );
+    })()}
+  </Modal>
+)}
+
      </div>
    );
  }
@@ -1790,74 +1952,99 @@ new Promise(resolve => {
  
  // ─── ADMIN STATS ──────────────────────────────────────────────────────────────
  function AdminStats({user,data}) {
-   const [selectedEmp,setSelectedEmp]=useState("all");
-   const employees    =data.users.filter(u=>u.role==="employee"&&u.company===user.company);
-   const companyEmpIds=employees.map(u=>u.id);
-   const relevantAtt  =data.attendance.filter(a=>selectedEmp==="all"?companyEmpIds.includes(a.userId):a.userId===selectedEmp);
-   const present=relevantAtt.filter(a=>a.status==="present").length;
-   const late   =relevantAtt.filter(a=>a.status==="late").length;
-   const absent =relevantAtt.filter(a=>a.status==="absent").length;
-   const total  =present+late+absent;
-   return (
-     <div className="fade-in">
-       <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
-         <div><h2 style={s.h2}>Attendance Statistics</h2><p style={{...s.sub,marginTop:4}}>Individual and aggregate views</p></div>
-         <select value={selectedEmp} onChange={e=>setSelectedEmp(e.target.value)} style={{...s.input,width:"auto",minWidth:200}}>
-           <option value="all">All Employees</option>
-           {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-         </select>
-       </div>
-       <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
-         <StatCard label="Present" value={present} color={T.success} icon={<Icon.Check/>} sub={total?`${Math.round(present/total*100)}% of records`:""}/>
-         <StatCard label="Late"    value={late}    color={T.warning} icon={<Icon.Clock/>} sub={total?`${Math.round(late/total*100)}% of records`:""}/>
-         <StatCard label="Absent"  value={absent}  color={T.danger}  icon={<Icon.X/>}    sub={total?`${Math.round(absent/total*100)}% of records`:""}/>
-         <StatCard label="Total"   value={total}   color={T.accent}  icon={<Icon.Stats/>} sub="attendance records"/>
-       </div>
-       {selectedEmp==="all"&&(
-         <div style={s.card}>
-           <h3 style={{...s.h3,marginBottom:16}}>Per-Employee Breakdown</h3>
-           <table style={{width:"100%",borderCollapse:"collapse"}}>
-             <thead><tr>{["Employee","Present","Late","Absent","Rate"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
-             <tbody>
-               {employees.map((emp,i)=>{
-                 const ea=data.attendance.filter(a=>a.userId===emp.id);
-                 const ep=ea.filter(a=>a.status==="present").length, el=ea.filter(a=>a.status==="late").length, eab=ea.filter(a=>a.status==="absent").length;
-                 const et=ep+el+eab, rate=et?Math.round(ep/et*100):0;
-                 return (
-                   <tr key={emp.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                     <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>{emp.avatar}</div><span style={{fontSize:13,fontWeight:600}}>{emp.name}</span></div></td>
-                     <td style={{padding:"10px 14px",color:T.success,fontWeight:700}}>{ep}</td>
-                     <td style={{padding:"10px 14px",color:T.warning,fontWeight:700}}>{el}</td>
-                     <td style={{padding:"10px 14px",color:T.danger,fontWeight:700}}>{eab}</td>
-                     <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{flex:1,height:8,background:"rgba(255,255,255,0.08)",borderRadius:4,overflow:"hidden",maxWidth:80}}><div style={{height:"100%",width:`${rate}%`,background:rate>90?T.success:rate>70?T.warning:T.danger,borderRadius:4,transition:"width 0.5s"}}/></div><span style={{fontSize:13,fontWeight:700,color:rate>90?T.success:rate>70?T.warning:T.danger}}>{rate}%</span></div></td>
-                   </tr>
-                 );
-               })}
-             </tbody>
-           </table>
-         </div>
-       )}
-       {selectedEmp!=="all"&&(
-         <div style={s.card}>
-           <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {data.users.find(u=>u.id===selectedEmp)?.name}</h3>
-           <table style={{width:"100%",borderCollapse:"collapse"}}>
-             <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
-             <tbody>
-               {relevantAtt.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
-                 <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                   <td style={{padding:"10px 14px",fontSize:13}}>{fmtDate(a.date)}</td>
-                   <td style={{padding:"10px 14px",fontSize:13}}>{a.checkIn||"—"}</td>
-                   <td style={{padding:"10px 14px",fontSize:13}}>{a.checkOut||"—"}</td>
-                   <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
-                 </tr>
-               ))}
-               {relevantAtt.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>}
-             </tbody>
-           </table>
-         </div>
-       )}
-     </div>
-   );
+  const [selectedEmp,setSelectedEmp]=useState("all");
+  const employees    =data.users.filter(u=>u.role==="employee"&&u.company===user.company);
+  const companyEmpIds=employees.map(u=>u.id);
+  const relevantAtt  =data.attendance.filter(a=>selectedEmp==="all"?companyEmpIds.includes(a.userId):a.userId===selectedEmp);
+
+  // Computed absent for one employee: past workdays with no attendance record at all
+  const absentForUser = (uid) => {
+    const empRecs = data.attendance.filter(a=>a.userId===uid);
+    const emp     = employees.find(e=>e.id===uid);
+    let count=0;
+    const start=new Date((emp?.joinDate||today())+"T00:00:00");
+    const end  =new Date(today()+"T00:00:00");
+    if(isNaN(start.getTime())||isNaN(end.getTime())) return 0;
+    for(let d=new Date(start); d<end; d.setDate(d.getDate()+1)){
+      const day=d.getDay();
+      if(day===0||day===6) continue;
+      const ds=d.toISOString().split("T")[0];
+      if(!empRecs.some(a=>a.date===ds)) count++;
+    }
+    return count;
+  };
+
+  const present=relevantAtt.filter(a=>a.status==="present").length;
+  const late   =relevantAtt.filter(a=>a.status==="late").length;
+  const absent = selectedEmp==="all"
+    ? relevantAtt.filter(a=>a.status==="absent").length + companyEmpIds.reduce((sum,uid)=>sum+absentForUser(uid),0)
+    : relevantAtt.filter(a=>a.status==="absent").length + absentForUser(selectedEmp);
+  const total  =present+late+absent;
+
+  return (
+    <div className="fade-in">
+      <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div><h2 style={s.h2}>Attendance Statistics</h2><p style={{...s.sub,marginTop:4}}>Individual and aggregate views</p></div>
+        <select value={selectedEmp} onChange={e=>setSelectedEmp(e.target.value)} style={{...s.input,width:"auto",minWidth:200}}>
+          <option value="all">All Employees</option>
+          {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+      </div>
+      <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
+        <StatCard label="Present" value={present} color={T.success} icon={<Icon.Check/>} sub={total?`${Math.round(present/total*100)}% of records`:""}/>
+        <StatCard label="Late"    value={late}    color={T.warning} icon={<Icon.Clock/>} sub={total?`${Math.round(late/total*100)}% of records`:""}/>
+        <StatCard label="Absent"  value={absent}  color={T.danger}  icon={<Icon.X/>}    sub={total?`${Math.round(absent/total*100)}% of records`:""}/>
+        <StatCard label="Total"   value={total}   color={T.accent}  icon={<Icon.Stats/>} sub="attendance records"/>
+      </div>
+      {selectedEmp==="all"&&(
+        <div style={s.card}>
+          <h3 style={{...s.h3,marginBottom:16}}>Per-Employee Breakdown</h3>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr>{["Employee","Present","Late","Absent","Rate"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {employees.map((emp,i)=>{
+                const ea=data.attendance.filter(a=>a.userId===emp.id);
+                const ep=ea.filter(a=>a.status==="present").length;
+                const el=ea.filter(a=>a.status==="late").length;
+                const eab=absentForUser(emp.id);
+                const et=ep+el+eab, rate=et?Math.round(ep/et*100):0;
+                return (
+                  <tr key={emp.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
+                    <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>{emp.avatar}</div><span style={{fontSize:13,fontWeight:600}}>{emp.name}</span></div></td>
+                    <td style={{padding:"10px 14px",color:T.success,fontWeight:700}}>{ep}</td>
+                    <td style={{padding:"10px 14px",color:T.warning,fontWeight:700}}>{el}</td>
+                    <td style={{padding:"10px 14px",color:T.danger,fontWeight:700}}>{eab}</td>
+                    <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{flex:1,height:8,background:"rgba(255,255,255,0.08)",borderRadius:4,overflow:"hidden",maxWidth:80}}><div style={{height:"100%",width:`${rate}%`,background:rate>90?T.success:rate>70?T.warning:T.danger,borderRadius:4,transition:"width 0.5s"}}/></div><span style={{fontSize:13,fontWeight:700,color:rate>90?T.success:rate>70?T.warning:T.danger}}>{rate}%</span></div></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {selectedEmp!=="all"&&(
+        <div style={s.card}>
+          <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {data.users.find(u=>u.id===selectedEmp)?.name}</h3>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {relevantAtt.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
+                <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
+                  <td style={{padding:"10px 14px",fontSize:13}}>{fmtDate(a.date)}</td>
+                  <td style={{padding:"10px 14px",fontSize:13}}>{a.checkIn||"—"}</td>
+                  <td style={{padding:"10px 14px",fontSize:13}}>{a.checkOut||"—"}</td>
+                  <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
+                </tr>
+              ))}
+              {relevantAtt.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
  }
  
  // ─── ADMIN PASSWORD ───────────────────────────────────────────────────────────
@@ -2086,9 +2273,21 @@ new Promise(resolve => {
  function GlobalAdminUsers({data,setData,toast}) {
    const [filter,setFilter]=useState("all");
    const users=data.users.filter(u=>u.role!=="global_admin"&&(filter==="all"||u.role===filter));
-   const toggleBlock=u=>{
-     setData(d=>({...d,users:d.users.map(u2=>u2.id===u.id?{...u2,blocked:!u2.blocked}:u2)}));
-     toast(u.blocked?`${u.name} unblocked.`:`${u.name} blocked.`,u.blocked?"success":"error");
+   const toggleBlock = async (u) => {
+    const newBlocked = !u.blocked;
+    try {
+      // Choose the correct table based on the user's role
+      if (u.role === 'employee') {
+        await toggleBlockEmployeeInDB(u.id, newBlocked);
+      } else {
+        await toggleBlockAdminInDB(u.id, newBlocked);
+      }
+      // Update local state only after the DB write succeeds
+      setData(d=>({...d,users:d.users.map(u2=>u2.id===u.id?{...u2,blocked:newBlocked}:u2)}));
+      toast(newBlocked?`${u.name} blocked.`:`${u.name} unblocked.`, newBlocked?"error":"success");
+    } catch(err) {
+      toast(`Error: ${err.message}`,"error");
+    }
    };
    return (
      <div className="fade-in">
