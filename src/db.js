@@ -45,6 +45,11 @@
    faceRegistered: row.face_registered,
    faceImage:      row.face_image,
    faceDescriptor: row.face_descriptor,
+   bankName:      row.bank_name,
+   accountHolder: row.account_holder,
+   accountNumber: row.account_number,
+   branchCode:    row.branch_code,
+   accountType:   row.account_type,
  }) : null
  
  const mapCompany = (row) => row ? ({
@@ -379,5 +384,47 @@ export const updatePayslipInDB = async (payslipId, p) => {
     deductions: p.deductions, net_pay: p.netPay,
     month: p.month, year: p.year,
   }).eq('id', payslipId)
+  if (error) throw new Error(error.message)
+}
+
+// ─── BANKING ─────────────────────────────────────────────────────────────────
+export const updateEmployeeBankingInDB = async (employeeId, b) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('employees').update({
+    bank_name:      b.bankName,
+    account_holder: b.accountHolder,
+    account_number: b.accountNumber,
+    branch_code:    b.branchCode,
+    account_type:   b.accountType,
+  }).eq('id', employeeId)
+  if (error) throw new Error(error.message)
+}
+
+// ─── PAYMENTS ────────────────────────────────────────────────────────────────
+export const fetchPayments = async (companyId) => {
+  if (!supabase) return []
+  try {
+    let q = supabase.from('payments').select('*')
+    if (companyId) q = q.eq('company_id', companyId)
+    const { data, error } = await q
+    if (error) return []
+    return (data || []).map(r => ({
+      id: r.id, userId: r.user_id, month: r.month, year: r.year,
+      amount: r.amount, paymentDate: r.payment_date,
+      reference: r.reference, status: r.status, payslipId: r.payslip_id,
+    }))
+  } catch { return [] }
+}
+
+export const fetchAllPayments = async () => fetchPayments(null)
+
+export const createPaymentInDB = async (p, companyId) => {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.from('payments').insert({
+    id: p.id, user_id: p.userId, company_id: companyId,
+    month: p.month, year: p.year, amount: p.amount,
+    payment_date: p.paymentDate, reference: p.reference,
+    status: 'paid', payslip_id: p.payslipId,
+  })
   if (error) throw new Error(error.message)
 }
