@@ -2314,12 +2314,18 @@ new Promise(resolve => {
  
  // ─── ADMIN STATS ──────────────────────────────────────────────────────────────
  function AdminStats({user,data}) {
-  const [selectedEmp,setSelectedEmp]=useState("all");
-  const employees    =data.users.filter(u=>u.role==="employee"&&u.company===user.company);
-  const companyEmpIds=employees.map(u=>u.id);
-  const relevantAtt  =data.attendance.filter(a=>selectedEmp==="all"?companyEmpIds.includes(a.userId):a.userId===selectedEmp);
+  const [selectedEmp, setSelectedEmp] = useState("all");
+  const [calYear,     setCalYear]     = useState(new Date().getFullYear());
+  const [calMonth,    setCalMonth]    = useState(new Date().getMonth());
 
-  // Computed absent for one employee: past workdays with no attendance record at all
+  const months        = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const employees     = data.users.filter(u=>u.role==="employee"&&u.company===user.company);
+  const companyEmpIds = employees.map(u=>u.id);
+  const relevantAtt   = data.attendance.filter(a=>
+    selectedEmp==="all" ? companyEmpIds.includes(a.userId) : a.userId===selectedEmp
+  );
+
+  // Computed absent for one employee across past workdays with no record
   const absentForUser = (uid) => {
     const empRecs = data.attendance.filter(a=>a.userId===uid);
     const emp     = employees.find(e=>e.id===uid);
@@ -2336,49 +2342,74 @@ new Promise(resolve => {
     return count;
   };
 
-  const present=relevantAtt.filter(a=>a.status==="present").length;
-  const late   =relevantAtt.filter(a=>a.status==="late").length;
-  const absent = selectedEmp==="all"
+  const present = relevantAtt.filter(a=>a.status==="present").length;
+  const late    = relevantAtt.filter(a=>a.status==="late").length;
+  const absent  = selectedEmp==="all"
     ? relevantAtt.filter(a=>a.status==="absent").length + companyEmpIds.reduce((sum,uid)=>sum+absentForUser(uid),0)
     : relevantAtt.filter(a=>a.status==="absent").length + absentForUser(selectedEmp);
-  const total  =present+late+absent;
+  const total   = present+late+absent;
+
+  // Calendar values for individual employee view
+  const todayStr  = today();
+  const days      = daysInMonth(calYear, calMonth);
+  const firstDay  = firstDayOfMonth(calYear, calMonth);
+  const selectedEmployee = data.users.find(u=>u.id===selectedEmp);
 
   return (
     <div className="fade-in">
+      {/* Header + dropdown */}
       <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
         <div><h2 style={s.h2}>Attendance Statistics</h2><p style={{...s.sub,marginTop:4}}>Individual and aggregate views</p></div>
-        <select value={selectedEmp} onChange={e=>setSelectedEmp(e.target.value)} style={{...s.input,width:"auto",minWidth:200}}>
+        <select value={selectedEmp} onChange={e=>{setSelectedEmp(e.target.value);setCalYear(new Date().getFullYear());setCalMonth(new Date().getMonth());}}
+          style={{...s.input,width:"auto",minWidth:200}}>
           <option value="all">All Employees</option>
           {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
       </div>
+
+      {/* Stat cards */}
       <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
         <StatCard label="Present" value={present} color={T.success} icon={<Icon.Check/>} sub={total?`${Math.round(present/total*100)}% of records`:""}/>
         <StatCard label="Late"    value={late}    color={T.warning} icon={<Icon.Clock/>} sub={total?`${Math.round(late/total*100)}% of records`:""}/>
         <StatCard label="Absent"  value={absent}  color={T.danger}  icon={<Icon.X/>}    sub={total?`${Math.round(absent/total*100)}% of records`:""}/>
         <StatCard label="Total"   value={total}   color={T.accent}  icon={<Icon.Stats/>} sub="attendance records"/>
       </div>
+
+      {/* ── ALL EMPLOYEES — breakdown table ── */}
       {selectedEmp==="all"&&(
         <div style={s.card}>
           <h3 style={{...s.h3,marginBottom:16}}>Per-Employee Breakdown</h3>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
-              <tr>{["Employee","Present","Late","Absent","Rate"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr>
-            </thead>
+            <thead><tr>{["Employee","Present","Late","Absent","Rate"].map(h=>(
+              <th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>
+            ))}</tr></thead>
             <tbody>
               {employees.map((emp,i)=>{
-                const ea=data.attendance.filter(a=>a.userId===emp.id);
-                const ep=ea.filter(a=>a.status==="present").length;
-                const el=ea.filter(a=>a.status==="late").length;
-                const eab=absentForUser(emp.id);
-                const et=ep+el+eab, rate=et?Math.round(ep/et*100):0;
+                const ea  = data.attendance.filter(a=>a.userId===emp.id);
+                const ep  = ea.filter(a=>a.status==="present").length;
+                const el  = ea.filter(a=>a.status==="late").length;
+                const eab = absentForUser(emp.id);
+                const et  = ep+el+eab;
+                const rate= et?Math.round(ep/et*100):0;
                 return (
                   <tr key={emp.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                    <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>{emp.avatar}</div><span style={{fontSize:13,fontWeight:600}}>{emp.name}</span></div></td>
+                    <td style={{padding:"10px 14px"}}>
+                      <div style={{...s.flex(8,"row","center")}}>
+                        <div style={{width:28,height:28,borderRadius:6,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>{emp.avatar}</div>
+                        <span style={{fontSize:13,fontWeight:600}}>{emp.name}</span>
+                      </div>
+                    </td>
                     <td style={{padding:"10px 14px",color:T.success,fontWeight:700}}>{ep}</td>
                     <td style={{padding:"10px 14px",color:T.warning,fontWeight:700}}>{el}</td>
-                    <td style={{padding:"10px 14px",color:T.danger,fontWeight:700}}>{eab}</td>
-                    <td style={{padding:"10px 14px"}}><div style={{...s.flex(8,"row","center")}}><div style={{flex:1,height:8,background:"rgba(255,255,255,0.08)",borderRadius:4,overflow:"hidden",maxWidth:80}}><div style={{height:"100%",width:`${rate}%`,background:rate>90?T.success:rate>70?T.warning:T.danger,borderRadius:4,transition:"width 0.5s"}}/></div><span style={{fontSize:13,fontWeight:700,color:rate>90?T.success:rate>70?T.warning:T.danger}}>{rate}%</span></div></td>
+                    <td style={{padding:"10px 14px",color:T.danger, fontWeight:700}}>{eab}</td>
+                    <td style={{padding:"10px 14px"}}>
+                      <div style={{...s.flex(8,"row","center")}}>
+                        <div style={{flex:1,height:8,background:"rgba(255,255,255,0.08)",borderRadius:4,overflow:"hidden",maxWidth:80}}>
+                          <div style={{height:"100%",width:`${rate}%`,background:rate>90?T.success:rate>70?T.warning:T.danger,borderRadius:4,transition:"width 0.5s"}}/>
+                        </div>
+                        <span style={{fontSize:13,fontWeight:700,color:rate>90?T.success:rate>70?T.warning:T.danger}}>{rate}%</span>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -2386,83 +2417,84 @@ new Promise(resolve => {
           </table>
         </div>
       )}
+
+      {/* ── INDIVIDUAL EMPLOYEE — calendar + log ── */}
       {selectedEmp!=="all"&&(
         <>
-          {/* ── Employee Calendar ── */}
-          {(()=>{
-            const emp      = data.users.find(u=>u.id===selectedEmp);
-            const now      = new Date();
-            const [calYear,  setCalYear]  = React.useState(now.getFullYear());
-            const [calMonth, setCalMonth] = React.useState(now.getMonth());
-            const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-            const days    = daysInMonth(calYear, calMonth);
-            const firstDay= firstDayOfMonth(calYear, calMonth);
-            const todayStr= today();
-            const empAtt  = relevantAtt;
+          {/* Calendar */}
+          <div style={{...s.card,marginBottom:16,padding:12}}>
+            <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:6}}>
+              <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}}
+                style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>‹</button>
+              <span style={{...s.h3,fontSize:15}}>{months[calMonth]} {calYear} — {selectedEmployee?.name}</span>
+              <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}}
+                style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>›</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+                <div key={d} style={{textAlign:"center",color:T.gray400,fontSize:10,fontWeight:700,padding:"4px 0"}}>{d}</div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+              {Array(firstDay).fill(null).map((_,i)=><div key={"e"+i}/>)}
+              {Array(days).fill(null).map((_,i)=>{
+                const d       = i+1;
+                const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+                const rec     = relevantAtt.find(a=>a.date===dateStr);
+                const isToday = dateStr===todayStr;
+                const isPast  = dateStr<todayStr;
+                const isWeekend=[0,6].includes(new Date(dateStr).getDay());
+                const status  = rec?.status||(isPast&&!isWeekend?"absent":null);
+                let bg="transparent",border="1px solid transparent",textColor=T.white;
+                if(isToday)               {bg=`${T.accent}33`;   border=`1px solid ${T.accent}`;}
+                else if(status==="present"){bg=`${T.success}22`; border=`1px solid ${T.success}33`;}
+                else if(status==="late")   {bg=`${T.warning}22`; border=`1px solid ${T.warning}33`;}
+                else if(status==="absent") {bg=`${T.danger}22`;  border=`1px solid ${T.danger}33`;}
+                else if(isWeekend)         {textColor=T.gray400;}
+                return (
+                  <div key={d} style={{height:40,borderRadius:4,display:"flex",flexDirection:"column",
+                    alignItems:"center",justifyContent:"center",background:bg,border,
+                    color:textColor,fontSize:11,fontWeight:isToday?800:500,position:"relative"}}>
+                    {d}
+                    {status&&<div style={{width:5,height:5,borderRadius:"50%",
+                      background:status==="present"?T.success:status==="late"?T.warning:T.danger,
+                      position:"absolute",bottom:3}}/>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{...s.flex(16,"row","center"),marginTop:8,flexWrap:"wrap"}}>
+              {[["Present",T.success],["Late",T.warning],["Absent",T.danger],["Today",T.accent]].map(([l,c])=>(
+                <div key={l} style={{...s.flex(6,"row","center")}}>
+                  <div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{...s.sub,fontSize:11}}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-            return (
-              <div style={{...s.card, marginBottom:16, padding:12}}>
-                <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:6}}>
-                  <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>‹</button>
-                  <span style={{...s.h3,fontSize:15}}>{monthNames[calMonth]} {calYear} — {emp?.name}</span>
-                  <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>›</button>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
-                    <div key={d} style={{textAlign:"center",color:T.gray400,fontSize:10,fontWeight:700,padding:"4px 0"}}>{d}</div>
-                  ))}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-                  {Array(firstDay).fill(null).map((_,i)=><div key={"e"+i}/>)}
-                  {Array(days).fill(null).map((_,i)=>{
-                    const d       = i+1;
-                    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                    const rec     = empAtt.find(a=>a.date===dateStr);
-                    const isToday = dateStr===todayStr;
-                    const isPast  = dateStr<todayStr;
-                    const isWeekend=[0,6].includes(new Date(dateStr).getDay());
-                    const status  = rec?.status || (isPast&&!isWeekend?"absent":null);
-                    let bg="transparent",border="1px solid transparent",textColor=T.white;
-                    if(isToday)              {bg=`${T.accent}33`;   border=`1px solid ${T.accent}`;}
-                    else if(status==="present"){bg=`${T.success}22`; border=`1px solid ${T.success}33`;}
-                    else if(status==="late")   {bg=`${T.warning}22`; border=`1px solid ${T.warning}33`;}
-                    else if(status==="absent") {bg=`${T.danger}22`;  border=`1px solid ${T.danger}33`;}
-                    else if(isWeekend)         {textColor=T.gray400;}
-                    return (
-                      <div key={d} style={{height:40,borderRadius:4,display:"flex",flexDirection:"column",alignItems:"center",
-                        justifyContent:"center",background:bg,border,color:textColor,fontSize:11,fontWeight:isToday?800:500,position:"relative"}}>
-                        {d}
-                        {status&&<div style={{width:5,height:5,borderRadius:"50%",background:status==="present"?T.success:status==="late"?T.warning:T.danger,position:"absolute",bottom:3}}/>}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{...s.flex(16,"row","center"),marginTop:8,flexWrap:"wrap"}}>
-                  {[["Present",T.success],["Late",T.warning],["Absent",T.danger],["Today",T.accent]].map(([l,c])=>(
-                    <div key={l} style={{...s.flex(6,"row","center")}}>
-                      <div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{...s.sub,fontSize:11}}>{l}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ── Attendance Log Table ── */}
+          {/* Attendance log table */}
           <div style={s.card}>
-            <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {data.users.find(u=>u.id===selectedEmp)?.name}</h3>
+            <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {selectedEmployee?.name}</h3>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=>(
+                <th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>
+              ))}</tr></thead>
               <tbody>
-                {relevantAtt.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
+                {[...relevantAtt].sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
                   <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
                     <td style={{padding:"10px 14px",fontSize:13}}>{fmtDate(a.date)}</td>
                     <td style={{padding:"10px 14px",fontSize:13}}>{a.checkIn||"—"}</td>
                     <td style={{padding:"10px 14px",fontSize:13}}>{a.checkOut||"—"}</td>
-                    <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
+                    <td style={{padding:"10px 14px"}}>
+                      <span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>
+                        {a.status.toUpperCase()}
+                      </span>
+                    </td>
                   </tr>
                 ))}
-                {relevantAtt.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>}
+                {relevantAtt.length===0&&(
+                  <tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -2804,26 +2836,29 @@ new Promise(resolve => {
       const isGlobal  = user.role === 'global_admin';
       const companyId = isGlobal ? null : user.company;
   
-      const [dbAdmins, dbCompanies, dbEmployees, dbLeaves, dbAttendance, dbPayslips] =
-        await Promise.all([
-          fetchAdmins(),
-          fetchCompanies(),
-          isGlobal ? fetchAllEmployees()   : fetchEmployees(companyId),
-          isGlobal ? fetchAllLeaves()      : fetchLeaves(companyId),
-          isGlobal ? fetchAllAttendance()  : fetchAttendance(companyId),
-          isGlobal ? fetchAllPayslips()    : fetchPayslips(companyId),
-          isGlobal ? fetchAllPayments()   : fetchPayments(companyId),
-        ]);
+      const [
+        dbAdmins, dbCompanies, dbEmployees,
+        dbLeaves, dbAttendance, dbPayslips, dbPayments
+      ] = await Promise.all([
+        fetchAdmins(),
+        fetchCompanies(),
+        isGlobal ? fetchAllEmployees()  : fetchEmployees(companyId),
+        isGlobal ? fetchAllLeaves()     : fetchLeaves(companyId),
+        isGlobal ? fetchAllAttendance() : fetchAttendance(companyId),
+        isGlobal ? fetchAllPayslips()   : fetchPayslips(companyId),
+        isGlobal ? fetchAllPayments()   : fetchPayments(companyId),
+      ]);
   
       setData({
-        users:      [...dbAdmins, ...dbEmployees],
-        companies:  dbCompanies.length > 0 ? dbCompanies : SEED.companies,
-        leaves:     dbLeaves,
-        attendance: dbAttendance,
-        payslips:   dbPayslips,
-        payments: dbPayments,
+        users:           [...dbAdmins, ...dbEmployees],
+        companies:       dbCompanies.length > 0 ? dbCompanies : SEED.companies,
+        leaves:          dbLeaves,
+        attendance:      dbAttendance,
+        payslips:        dbPayslips,
+        payments:        dbPayments,
+        workmaxPayments: [],
       });
-    } catch (err) {
+    } catch(err) {
       console.warn('Supabase load failed:', err);
     }
     setCurrentUser(user);
@@ -2831,7 +2866,7 @@ new Promise(resolve => {
       user.role === 'global_admin'  ? 'overview'   :
       user.role === 'company_admin' ? 'employees'  : 'dashboard'
     );
-    }, []);
+  }, []);
  
  
    const handleLogout = useCallback(()=>{setCurrentUser(null);setActiveNav(null);},[]);
