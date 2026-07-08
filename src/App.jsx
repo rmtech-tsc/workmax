@@ -27,7 +27,8 @@
   updateEmployeePersonalEmailInDB,updateEmployeeFaceInDB,
   fetchLeaves, fetchAllLeaves, createLeaveInDB, updateLeaveInDB,
   fetchAttendance, fetchAllAttendance, createAttendanceInDB,
-  fetchPayslips, fetchAllPayslips, createPayslipInDB, updatePayslipInDB } from './db'
+  fetchPayslips, fetchAllPayslips, createPayslipInDB, updatePayslipInDB,
+  updateEmployeeBankingInDB, fetchPayments, fetchAllPayments, createPaymentInDB,} from './db'
 
  import jsPDF from "jspdf";
  import * as faceapi from "face-api.js";
@@ -84,8 +85,261 @@
   attendance: [],
   leaves:     [],
   payslips:   [],
+  payments: [],
 };
  
+
+ // ─── EMPLOYEE BANKING PAGE ─────────────────────────────
+
+ function EmployeeBanking({user,data,setData,toast}) {
+  const [editing,setEditing]=useState(false);
+  const [form,setForm]=useState({
+    bankName:user.bankName||"", accountHolder:user.accountHolder||user.name,
+    accountNumber:user.accountNumber||"", branchCode:user.branchCode||"",
+    accountType:user.accountType||"Cheque",
+  });
+
+  const save=async()=>{
+    if(!form.bankName.trim()||!form.accountNumber.trim()||!form.branchCode.trim()){
+      toast("Bank name, account number and branch code are required.","error");return;
+    }
+    try{
+      await updateEmployeeBankingInDB(user.id,form);
+      setData(d=>({...d,users:d.users.map(u=>u.id===user.id?{...u,...form}:u)}));
+      toast("Banking details saved!","success");
+      setEditing(false);
+    }catch(err){toast(`Error: ${err.message}`,"error");}
+  };
+
+  const rows=[["Bank",user.bankName],["Account Holder",user.accountHolder],["Account Number",user.accountNumber],["Branch Code",user.branchCode],["Account Type",user.accountType]];
+  const hasDetails=!!user.accountNumber;
+
+  return (
+    <div className="fade-in" style={{maxWidth:560}}>
+      <div style={{marginBottom:24}}>
+        <h2 style={s.h2}>Banking Details</h2>
+        <p style={{...s.sub,marginTop:4}}>Used by your employer to pay your salary. Kept private to you and your admin.</p>
+      </div>
+      <div style={s.card}>
+        {!editing?(
+          <>
+            {hasDetails?rows.map(([l,v])=>(
+              <div key={l} style={{...s.flex(0,"row","center"),justifyContent:"space-between",padding:"12px 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                <span style={s.sub}>{l}</span><span style={{fontSize:14,fontWeight:600}}>{v||"—"}</span>
+              </div>
+            )):(
+              <p style={{...s.sub,textAlign:"center",padding:"24px 0"}}>No banking details on file yet.</p>
+            )}
+            <button onClick={()=>setEditing(true)} style={{...s.btn(),marginTop:16}}>{hasDetails?"Edit Details":"Add Banking Details"}</button>
+          </>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div><label style={s.label}>Bank Name *</label><input value={form.bankName} onChange={e=>setForm(f=>({...f,bankName:e.target.value}))} style={s.input} placeholder="e.g. FNB, Capitec, Standard Bank"/></div>
+            <div><label style={s.label}>Account Holder *</label><input value={form.accountHolder} onChange={e=>setForm(f=>({...f,accountHolder:e.target.value}))} style={s.input}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div><label style={s.label}>Account Number *</label><input value={form.accountNumber} onChange={e=>setForm(f=>({...f,accountNumber:e.target.value.replace(/\D/g,"")}))} style={s.input} inputMode="numeric"/></div>
+              <div><label style={s.label}>Branch Code *</label><input value={form.branchCode} onChange={e=>setForm(f=>({...f,branchCode:e.target.value.replace(/\D/g,"")}))} style={s.input} inputMode="numeric"/></div>
+            </div>
+            <div>
+              <label style={s.label}>Account Type</label>
+              <select value={form.accountType} onChange={e=>setForm(f=>({...f,accountType:e.target.value}))} style={s.input}>
+                {["Cheque","Savings","Transmission"].map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end"}}>
+              <button onClick={()=>setEditing(false)} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
+              <button onClick={save} style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}>Save Details</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+ }
+
+  
+ // ─── ADMIN PAYSALARIES ─────────────
+ function AdminPaySalaries({user,data,setData,toast}) {
+  const now=new Date();
+  const months=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const [selMonth,setSelMonth]=useState(months[now.getMonth()]);
+  const [selYear, setSelYear] =useState(now.getFullYear());
+  const [selected,setSelected]=useState([]);
+  const [paying,  setPaying]  =useState(false);
+  const [viewMode,setViewMode]=useState("byMonth"); // byMonth | byEmployee
+
+  const employees=data.users.filter(u=>u.role==="employee"&&u.company===user.company);
+  const payments =(data.payments||[]).filter(p=>employees.some(e=>e.id===p.userId));
+  const getEmp   =id=>employees.find(e=>e.id===id);
+
+  const paidThisPeriod=uid=>payments.some(p=>p.userId===uid&&p.month===selMonth&&p.year===selYear);
+  const slipForPeriod =uid=>data.payslips.find(p=>p.userId===uid&&p.month===selMonth&&p.year===selYear);
+  const latestSlip    =uid=>{
+    const slips=data.payslips.filter(p=>p.userId===uid);
+    if(!slips.length) return null;
+    return [...slips].sort((a,b)=>(b.year-a.year)||(months.indexOf(b.month)-months.indexOf(a.month)))[0];
+  };
+  // Amount that will be paid: this period's payslip if it exists, else latest as template
+  const amountFor=uid=>{const sp=slipForPeriod(uid);if(sp)return sp.netPay;const t=latestSlip(uid);return t?t.netPay:null;};
+
+  const toggleSel=uid=>setSelected(s=>s.includes(uid)?s.filter(x=>x!==uid):[...s,uid]);
+
+  const paySelected=async()=>{
+    if(!selected.length){toast("Select at least one employee.","error");return;}
+    setPaying(true);
+    let ok=0; const skipped=[];
+    for(const uid of selected){
+      const emp=getEmp(uid);
+      if(paidThisPeriod(uid)){skipped.push(`${emp.name} — already paid`);continue;}
+      try{
+        // AUTOMATED PAYSLIP: use this period's payslip, or clone the latest one
+        let slip=slipForPeriod(uid);
+        if(!slip){
+          const template=latestSlip(uid);
+          if(!template){skipped.push(`${emp.name} — no payslip history, create one manually first`);continue;}
+          slip={id:genId(),userId:uid,month:selMonth,year:selYear,
+            basicSalary:template.basicSalary,allowances:template.allowances,
+            deductions:template.deductions,netPay:template.netPay,
+            issueDate:today(),downloaded:false};
+          await createPayslipInDB(slip,user.company);
+          setData(d=>({...d,payslips:[...d.payslips,slip]}));
+        }
+        const pay={id:genId(),userId:uid,month:selMonth,year:selYear,
+          amount:slip.netPay,paymentDate:today(),
+          reference:`SAL-${selMonth.slice(0,3).toUpperCase()}${selYear}-${(emp.name.split(" ")[0]||"EMP").toUpperCase()}`,
+          status:"paid",payslipId:slip.id};
+        await createPaymentInDB(pay,user.company);
+        setData(d=>({...d,payments:[...(d.payments||[]),pay]}));
+        ok++;
+      }catch(err){skipped.push(`${emp.name} — ${err.message}`);}
+    }
+    setPaying(false); setSelected([]);
+    if(ok)             toast(`${ok} payment${ok>1?"s":""} recorded for ${selMonth} ${selYear}. Payslips issued automatically.`,"success");
+    if(skipped.length) toast(`Skipped: ${skipped.join("; ")}`,"error");
+  };
+
+  // Stats
+  const periodPays=payments.filter(p=>p.month===selMonth&&p.year===selYear);
+  const periodTotal=periodPays.reduce((sum,p)=>sum+p.amount,0);
+  const allTimeTotal=payments.reduce((sum,p)=>sum+p.amount,0);
+  const unpaidCount=employees.filter(e=>!paidThisPeriod(e.id)).length;
+
+  // History groupings
+  const byMonthGroups=(()=>{const g={};payments.forEach(p=>{const k=`${p.month} ${p.year}`;(g[k]=g[k]||[]).push(p);});
+    return Object.entries(g).sort((a,b)=>{const[ma,ya]=a[0].split(" ");const[mb,yb]=b[0].split(" ");
+      return (+yb - +ya)||(months.indexOf(mb)-months.indexOf(ma));});})();
+  const byEmpGroups=employees.map(e=>({emp:e,pays:payments.filter(p=>p.userId===e.id)
+    .sort((a,b)=>(b.year-a.year)||(months.indexOf(b.month)-months.indexOf(a.month)))})).filter(g=>g.pays.length);
+
+  return (
+    <div className="fade-in">
+      {/* Stats */}
+      <div style={{...s.flex(16,"row","stretch"),marginBottom:24,flexWrap:"wrap"}}>
+        <StatCard label={`Paid — ${selMonth} ${selYear}`} value={`R${periodTotal.toFixed(2)}`} color={T.success} icon={<Icon.Money/>} sub={`${periodPays.length} employee${periodPays.length!==1?"s":""} paid`}/>
+        <StatCard label="Unpaid This Period" value={unpaidCount} color={unpaidCount?T.warning:T.success} icon={<Icon.Clock/>}/>
+        <StatCard label="Total Paid (All Time)" value={`R${allTimeTotal.toFixed(2)}`} color={T.accent} icon={<Icon.Stats/>} sub={`${payments.length} payments`}/>
+      </div>
+
+      {/* Pay panel */}
+      <div style={{...s.card,marginBottom:24}}>
+        <div style={{...s.flex(12,"row","center"),justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+          <h3 style={s.h3}>Pay Salaries</h3>
+          <div style={{...s.flex(8,"row","center"),flexWrap:"wrap"}}>
+            <select value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{...s.input,width:"auto"}}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select>
+            <input type="number" value={selYear} onChange={e=>setSelYear(+e.target.value)} style={{...s.input,width:90}}/>
+            <button onClick={()=>setSelected(employees.filter(e=>!paidThisPeriod(e.id)).map(e=>e.id))} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>Select All Unpaid</button>
+          </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["","Employee","Banking","Amount (Net)","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {employees.map((emp,i)=>{
+                const paid=paidThisPeriod(emp.id), amt=amountFor(emp.id);
+                return (
+                  <tr key={emp.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent",opacity:paid?0.55:1}}>
+                    <td style={{padding:"10px 14px"}}>
+                      <input type="checkbox" checked={selected.includes(emp.id)} disabled={paid} onChange={()=>toggleSel(emp.id)} style={{width:16,height:16,accentColor:T.accent}}/>
+                    </td>
+                    <td style={{padding:"10px 14px"}}>
+                      <div style={{fontSize:13,fontWeight:600}}>{emp.name}</div>
+                      <div style={{...s.sub,fontSize:11}}>{emp.position||"—"}</div>
+                    </td>
+                    <td style={{padding:"10px 14px",fontSize:12,color:T.gray400}}>
+                      {emp.accountNumber?`${emp.bankName} · ${emp.accountNumber} · ${emp.branchCode}`:<span style={{color:T.warning}}>No banking details</span>}
+                    </td>
+                    <td style={{padding:"10px 14px",fontSize:13,fontWeight:700,color:amt!=null?T.success:T.warning}}>
+                      {amt!=null?`R${amt.toFixed(2)}`:"No payslip history"}
+                    </td>
+                    <td style={{padding:"10px 14px"}}><span style={s.badge(paid?T.success:T.warning)}>{paid?"PAID":"UNPAID"}</span></td>
+                  </tr>
+                );
+              })}
+              {employees.length===0&&<tr><td colSpan={5} style={{padding:32,textAlign:"center",color:T.gray400}}>No employees.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{...s.flex(12,"row","center"),justifyContent:"space-between",marginTop:16,flexWrap:"wrap",gap:10}}>
+          <p style={{...s.sub,fontSize:12,maxWidth:420}}>
+            Recording a payment issues the {selMonth} payslip automatically (copied from each employee's latest payslip).
+            Run the actual transfer via your bank's EFT using the banking details shown.
+          </p>
+          <button onClick={paySelected} disabled={paying||!selected.length} style={{...s.btn(T.success),opacity:paying||!selected.length?0.5:1,boxShadow:`0 4px 12px ${T.success}44`}}>
+            {paying?"Recording…":`Record Payment — ${selected.length} selected`}
+          </button>
+        </div>
+      </div>
+
+      {/* History */}
+      <div style={s.card}>
+        <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+          <h3 style={s.h3}>Payment History</h3>
+          <div style={{...s.flex(4,"row","center")}}>
+            <button onClick={()=>setViewMode("byMonth")}    style={s.btnSm(viewMode==="byMonth"   ?T.accent:"rgba(255,255,255,0.07)",viewMode==="byMonth"   ?T.white:T.gray400)}>By Month</button>
+            <button onClick={()=>setViewMode("byEmployee")} style={s.btnSm(viewMode==="byEmployee"?T.accent:"rgba(255,255,255,0.07)",viewMode==="byEmployee"?T.white:T.gray400)}>By Employee</button>
+          </div>
+        </div>
+
+        {payments.length===0&&<p style={{...s.sub,textAlign:"center",padding:"24px 0"}}>No payments recorded yet.</p>}
+
+        {viewMode==="byMonth"&&byMonthGroups.map(([period,pays])=>(
+          <div key={period} style={{marginBottom:18}}>
+            <div style={{...s.flex(10,"row","center"),justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid rgba(255,255,255,0.07)`,marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:14}}>{period}</span>
+              <span style={{...s.badge(T.success)}}>{pays.length} paid · R{pays.reduce((sm,p)=>sm+p.amount,0).toFixed(2)}</span>
+            </div>
+            {pays.map(p=>(
+              <div key={p.id} style={{...s.flex(10,"row","center"),justifyContent:"space-between",padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:600}}>{getEmp(p.userId)?.name||"Unknown"}</span>
+                <span style={{...s.sub,fontSize:12}}>{p.reference}</span>
+                <span style={{...s.sub,fontSize:12}}>{fmtDate(p.paymentDate)}</span>
+                <span style={{fontSize:13,fontWeight:700,color:T.success}}>R{p.amount.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {viewMode==="byEmployee"&&byEmpGroups.map(({emp,pays})=>(
+          <div key={emp.id} style={{marginBottom:18}}>
+            <div style={{...s.flex(10,"row","center"),justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid rgba(255,255,255,0.07)`,marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:14}}>{emp.name}</span>
+              <span style={{...s.badge(T.accent)}}>{pays.length} payment{pays.length>1?"s":""} · R{pays.reduce((sm,p)=>sm+p.amount,0).toFixed(2)}</span>
+            </div>
+            {pays.map(p=>(
+              <div key={p.id} style={{...s.flex(10,"row","center"),justifyContent:"space-between",padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:600}}>{p.month} {p.year}</span>
+                <span style={{...s.sub,fontSize:12}}>{p.reference}</span>
+                <span style={{...s.sub,fontSize:12}}>{fmtDate(p.paymentDate)}</span>
+                <span style={{fontSize:13,fontWeight:700,color:T.success}}>R{p.amount.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+ }
+
  // ─── UTILITY HELPERS ──────────────────────────────────────────────────────────
  const today           = () => new Date().toISOString().split("T")[0];
  const nowHour         = () => new Date().getHours();
@@ -164,7 +418,7 @@ new Promise(resolve => {
   // Start first reading
   navigator.geolocation.getCurrentPosition(processReading, finish,
     {enableHighAccuracy:true, timeout:8000, maximumAge:0});
-});
+  });
  
  // ─── GLOBAL CSS ───────────────────────────────────────────────────────────────
  const globalCSS = `
@@ -187,34 +441,33 @@ new Promise(resolve => {
  
  // ─── STYLE PRIMITIVES ─────────────────────────────────────────────────────────
  const s = {
-   flex:(g=0,d="row",a="center")=>({display:"flex",flexDirection:d,alignItems:a,gap:g}),
-   card:{background:T.navyMid,borderRadius:16,padding:24,border:`1px solid rgba(255,255,255,0.06)`},
-   h1:{fontSize:28,fontWeight:800,color:T.white,letterSpacing:-0.5},
-   h2:{fontSize:20,fontWeight:700,color:T.white},
-   h3:{fontSize:16,fontWeight:600,color:T.white},
-   sub:{fontSize:13,color:T.gray400},
-   btn:(bg=T.accent,fg=T.white)=>({
-     background:bg,color:fg,border:"none",borderRadius:10,padding:"10px 20px",
-     fontWeight:600,fontSize:14,cursor:"pointer",transition:"all 0.2s",
-     display:"inline-flex",alignItems:"center",gap:6,
-   }),
-   btnSm:(bg=T.accent,fg=T.white)=>({
-     background:bg,color:fg,border:"none",borderRadius:8,padding:"6px 14px",
-     fontWeight:600,fontSize:12,cursor:"pointer",transition:"all 0.2s",
-     display:"inline-flex",alignItems:"center",gap:4,
-   }),
-   // colorScheme:"dark" is critical for Android Chrome — prevents white-on-white date/select
-   input:{
-     width:"100%",background:"rgba(255,255,255,0.05)",border:`1px solid rgba(255,255,255,0.1)`,
-     borderRadius:10,padding:"10px 14px",color:T.white,fontSize:14,outline:"none",
-     transition:"border-color 0.2s",colorScheme:"dark",
-   },
-   label:{fontSize:13,fontWeight:600,color:T.gray400,marginBottom:6,display:"block"},
-   badge:(color)=>({
-     display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600,
-     background:color+"22",color:color,
-   }),
- };
+  flex:(g=0,d="row",a="center")=>({display:"flex",flexDirection:d,alignItems:a,gap:g}),
+  card:{background:T.navyMid,borderRadius:8,padding:24,border:`1px solid rgba(255,255,255,0.06)`},
+  h1:{fontSize:28,fontWeight:800,color:T.white,letterSpacing:-0.5},
+  h2:{fontSize:20,fontWeight:700,color:T.white},
+  h3:{fontSize:16,fontWeight:600,color:T.white},
+  sub:{fontSize:13,color:T.gray400},
+  btn:(bg=T.accent,fg=T.white)=>({
+    background:bg,color:fg,border:"none",borderRadius:6,padding:"10px 20px",
+    fontWeight:600,fontSize:14,cursor:"pointer",transition:"all 0.2s",
+    display:"inline-flex",alignItems:"center",gap:6,
+  }),
+  btnSm:(bg=T.accent,fg=T.white)=>({
+    background:bg,color:fg,border:"none",borderRadius:4,padding:"6px 14px",
+    fontWeight:600,fontSize:12,cursor:"pointer",transition:"all 0.2s",
+    display:"inline-flex",alignItems:"center",gap:4,
+  }),
+  input:{
+    width:"100%",background:"rgba(255,255,255,0.05)",border:`1px solid rgba(255,255,255,0.1)`,
+    borderRadius:6,padding:"10px 14px",color:T.white,fontSize:14,outline:"none",
+    transition:"border-color 0.2s",colorScheme:"dark",
+  },
+  label:{fontSize:13,fontWeight:600,color:T.gray400,marginBottom:6,display:"block"},
+  badge:(color)=>({
+    display:"inline-block",padding:"3px 10px",borderRadius:2,fontSize:12,fontWeight:600,
+    background:color+"22",color:color,
+  }),
+};
  
  // ─── ICONS ────────────────────────────────────────────────────────────────────
  const Icon = {
@@ -239,6 +492,8 @@ new Promise(resolve => {
    Lock:     ()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
    Alert:    ()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
    Pin:      ()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+   Bank: ()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21h18"/><path d="M4 10h16"/><path d="M5 6l7-3 7 3"/><path d="M5 10v11"/><path d="M19 10v11"/><path d="M9 14v3"/><path d="M15 14v3"/></svg>,
+   Money:()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="6" width="22" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5 10v.01"/><path d="M19 14v.01"/></svg>,
  };
  
  // ─── TOAST ────────────────────────────────────────────────────────────────────
@@ -460,7 +715,7 @@ new Promise(resolve => {
   
     const extractDescriptor = async (source) => {
       const detection = await faceapi
-        .detectSingleFace(source, new faceapi.SsdMobilenetv1Options({minConfidence:0.5}))
+        .detectSingleFace(source, new faceapi.SsdMobilenetv1Options({minConfidence:0.8}))
         .withFaceLandmarks()
         .withFaceDescriptor();
       return detection?.descriptor || null;
@@ -1859,96 +2114,203 @@ new Promise(resolve => {
  
  // ─── ADMIN PAYSLIPS ───────────────────────────────────────────────────────────
  function AdminPayslips({user,data,setData,toast}) {
-   const [editSlip,setEditSlip]=useState(null);
-   const [showAdd, setShowAdd] =useState(false);
-   const [form,setForm]=useState({userId:"",month:"January",year:new Date().getFullYear(),basicSalary:"",allowances:"",deductions:""});
-   const companyEmpIds=data.users.filter(u=>u.role==="employee"&&u.company===user.company).map(u=>u.id);
-   const allSlips=data.payslips.filter(p=>companyEmpIds.includes(p.userId)).sort((a,b)=>b.issueDate?.localeCompare(a.issueDate||"")||0);
-   const getEmp=id=>data.users.find(u=>u.id===id);
-   const months=["January","February","March","April","May","June","July","August","September","October","November","December"];
-   const employees=data.users.filter(u=>u.role==="employee"&&u.company===user.company);
- 
-   const saveSlip = async () => {
-    const net=parseFloat(form.basicSalary||0)+parseFloat(form.allowances||0)-parseFloat(form.deductions||0);
+  const [editSlip, setEditSlip] = useState(null);
+  const [showAdd,  setShowAdd]  = useState(false);
+  const [viewMode, setViewMode] = useState("byEmployee"); // byEmployee | byMonth
+  const [form,setForm] = useState({userId:"",month:"January",year:new Date().getFullYear(),basicSalary:"",allowances:"",deductions:""});
+
+  const months      = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const employees   = data.users.filter(u=>u.role==="employee"&&u.company===user.company);
+  const companyEmpIds = employees.map(u=>u.id);
+  const allSlips    = data.payslips
+    .filter(p=>companyEmpIds.includes(p.userId))
+    .sort((a,b)=>(b.year-a.year)||(months.indexOf(b.month)-months.indexOf(a.month)));
+  const getEmp      = id=>data.users.find(u=>u.id===id);
+
+  const resetForm   = () => setForm({userId:"",month:"January",year:new Date().getFullYear(),basicSalary:"",allowances:"",deductions:""});
+
+  const saveSlip = async () => {
+    const net = parseFloat(form.basicSalary||0)+parseFloat(form.allowances||0)-parseFloat(form.deductions||0);
     if(!form.userId){toast("Select an employee.","error");return;}
     try {
       if(editSlip){
-        const updated={...form,netPay:net,basicSalary:+form.basicSalary,allowances:+form.allowances,deductions:+form.deductions};
+        const updated = {...form,netPay:net,basicSalary:+form.basicSalary,allowances:+form.allowances,deductions:+form.deductions};
         await updatePayslipInDB(editSlip.id, updated);
         setData(d=>({...d,payslips:d.payslips.map(p=>p.id===editSlip.id?{...p,...updated}:p)}));
         toast("Payslip updated!","success");
       } else {
-        const entry={id:genId(),...form,basicSalary:+form.basicSalary,allowances:+form.allowances,deductions:+form.deductions,netPay:net,issueDate:today(),downloaded:false};
+        const entry = {id:genId(),...form,basicSalary:+form.basicSalary,allowances:+form.allowances,deductions:+form.deductions,netPay:net,issueDate:today(),downloaded:false};
         await createPayslipInDB(entry, user.company);
         setData(d=>({...d,payslips:[...d.payslips,entry]}));
         toast("Payslip created!","success");
       }
-      setEditSlip(null);setShowAdd(false);
-      setForm({userId:"",month:"January",year:new Date().getFullYear(),basicSalary:"",allowances:"",deductions:""});
+      setEditSlip(null); setShowAdd(false); resetForm();
     } catch(err) {
       toast(`Error saving payslip: ${err.message}`,"error");
     }
   };
- 
-   return (
-     <div className="fade-in">
-       <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:24}}>
-         <div><h2 style={s.h2}>Payslips</h2><p style={{...s.sub,marginTop:4}}>Manage employee payslip records</p></div>
-         <button onClick={()=>{setShowAdd(true);setEditSlip(null);setForm({userId:"",month:"January",year:new Date().getFullYear(),basicSalary:"",allowances:"",deductions:"" });}} style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}><Icon.Plus/>New Payslip</button>
-       </div>
-       <div style={s.card}>
-         <table style={{width:"100%",borderCollapse:"collapse"}}>
-           <thead><tr>{["Employee","Period","Basic","Allowances","Deductions","Net Pay","Actions"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-           <tbody>
-             {allSlips.map((p,i)=>{
-               const emp=getEmp(p.userId);
-               return (
-                 <tr key={p.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                   <td style={{padding:"12px 14px",fontSize:13,fontWeight:600}}>{emp?.name||"Unknown"}</td>
-                   <td style={{padding:"12px 14px",fontSize:13}}>{p.month} {p.year}</td>
-                   <td style={{padding:"12px 14px",fontSize:13}}>R{p.basicSalary.toFixed(2)}</td>
-                   <td style={{padding:"12px 14px",fontSize:13,color:T.success}}>R{p.allowances.toFixed(2)}</td>
-                   <td style={{padding:"12px 14px",fontSize:13,color:T.danger}}>-R{p.deductions.toFixed(2)}</td>
-                   <td style={{padding:"12px 14px",fontSize:15,fontWeight:800,color:T.success}}>R{p.netPay.toFixed(2)}</td>
-                   <td style={{padding:"12px 14px"}}><button onClick={()=>{setEditSlip(p);setShowAdd(true);setForm({userId:p.userId,month:p.month,year:p.year,basicSalary:String(p.basicSalary),allowances:String(p.allowances),deductions:String(p.deductions)});}} style={s.btnSm(T.accent)}>Edit</button></td>
-                 </tr>
-               );
-             })}
-             {allSlips.length===0&&<tr><td colSpan={7} style={{padding:32,textAlign:"center",color:T.gray400}}>No payslips yet.</td></tr>}
-           </tbody>
-         </table>
-       </div>
-       {showAdd&&(
-         <Modal title={editSlip?"Edit Payslip":"New Payslip"} onClose={()=>{setShowAdd(false);setEditSlip(null);}}>
-           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-             <div>
-               <label style={s.label}>Employee</label>
-               <select value={form.userId} onChange={e=>setForm(f=>({...f,userId:e.target.value}))} style={s.input} disabled={!!editSlip}>
-                 <option value="">Select employee…</option>
-                 {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-               </select>
-             </div>
-             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-               <div><label style={s.label}>Month</label><select value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} style={s.input}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
-               <div><label style={s.label}>Year</label><input type="number" value={form.year} onChange={e=>setForm(f=>({...f,year:+e.target.value}))} style={s.input}/></div>
-               <div><label style={s.label}>Basic Salary (R)</label><input type="number" value={form.basicSalary} onChange={e=>setForm(f=>({...f,basicSalary:e.target.value}))} style={s.input} placeholder="5000"/></div>
-               <div><label style={s.label}>Allowances (R)</label><input type="number" value={form.allowances} onChange={e=>setForm(f=>({...f,allowances:e.target.value}))} style={s.input} placeholder="800"/></div>
-               <div><label style={s.label}>Deductions (R)</label><input type="number" value={form.deductions} onChange={e=>setForm(f=>({...f,deductions:e.target.value}))} style={s.input} placeholder="600"/></div>
-               <div style={{display:"flex",flexDirection:"column",justifyContent:"flex-end",paddingBottom:2}}>
-                 <label style={s.label}>Net Pay (Preview)</label>
-                 <div style={{fontSize:20,fontWeight:800,color:T.success}}>R{((+form.basicSalary||0)+(+form.allowances||0)-(+form.deductions||0)).toFixed(2)}</div>
-               </div>
-             </div>
-             <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end",marginTop:4}}>
-               <button onClick={()=>{setShowAdd(false);setEditSlip(null);}} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
-               <button onClick={saveSlip} style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}>Save Payslip</button>
-             </div>
-           </div>
-         </Modal>
-       )}
-     </div>
-   );
- }
+
+  // ── Group by employee ─────────────────────────────────────────────────────
+  const byEmployeeGroups = employees.map(emp=>({
+    emp,
+    slips: allSlips.filter(p=>p.userId===emp.id),
+  })).filter(g=>g.slips.length>0);
+
+  // ── Group by month ────────────────────────────────────────────────────────
+  const byMonthGroups = (()=>{
+    const g={};
+    allSlips.forEach(p=>{
+      const key=`${p.month} ${p.year}`;
+      (g[key]=g[key]||[]).push(p);
+    });
+    return Object.entries(g).sort((a,b)=>{
+      const [ma,ya]=a[0].split(" "); const [mb,yb]=b[0].split(" ");
+      return (+yb - +ya)||(months.indexOf(mb)-months.indexOf(ma));
+    });
+  })();
+
+  // ── Shared payslip row renderer ───────────────────────────────────────────
+  const SlipRow = ({p, showEmp=true}) => {
+    const emp=getEmp(p.userId);
+    return (
+      <div style={{...s.flex(12,"row","center"),background:"rgba(255,255,255,0.03)",
+        borderRadius:4,padding:"10px 14px",marginBottom:6,flexWrap:"wrap",gap:8}}>
+        {showEmp&&(
+          <div style={{minWidth:130}}>
+            <div style={{fontSize:13,fontWeight:700}}>{emp?.name||"Unknown"}</div>
+            <div style={{...s.sub,fontSize:11}}>{emp?.position||"—"}</div>
+          </div>
+        )}
+        <div style={{...s.flex(20,"row","center"),flex:1,flexWrap:"wrap"}}>
+          {!showEmp&&<span style={{fontSize:13,fontWeight:600,minWidth:120}}>{p.month} {p.year}</span>}
+          {showEmp&&<span style={{...s.sub,fontSize:12,minWidth:100}}>{p.month} {p.year}</span>}
+          <span style={{fontSize:13}}>Basic: <strong>R{p.basicSalary.toFixed(2)}</strong></span>
+          <span style={{fontSize:13,color:T.success}}>+R{p.allowances.toFixed(2)}</span>
+          <span style={{fontSize:13,color:T.danger}}>-R{p.deductions.toFixed(2)}</span>
+          <span style={{fontSize:15,fontWeight:800,color:T.success}}>R{p.netPay.toFixed(2)}</span>
+        </div>
+        <button onClick={()=>{
+          setEditSlip(p); setShowAdd(true);
+          setForm({userId:p.userId,month:p.month,year:p.year,
+            basicSalary:String(p.basicSalary),allowances:String(p.allowances),deductions:String(p.deductions)});
+        }} style={s.btnSm(T.accent)}>Edit</button>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fade-in">
+      {/* Header */}
+      <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={s.h2}>Payslips</h2>
+          <p style={{...s.sub,marginTop:4}}>{allSlips.length} payslip{allSlips.length!==1?"s":""} issued</p>
+        </div>
+        <div style={{...s.flex(8,"row","center"),flexWrap:"wrap"}}>
+          {/* View toggle */}
+          <div style={{...s.flex(4,"row","center")}}>
+            <button onClick={()=>setViewMode("byEmployee")} style={s.btnSm(viewMode==="byEmployee"?T.accent:"rgba(255,255,255,0.07)",viewMode==="byEmployee"?T.white:T.gray400)}>By Employee</button>
+            <button onClick={()=>setViewMode("byMonth")}    style={s.btnSm(viewMode==="byMonth"   ?T.accent:"rgba(255,255,255,0.07)",viewMode==="byMonth"   ?T.white:T.gray400)}>By Month</button>
+          </div>
+          <button onClick={()=>{setShowAdd(true);setEditSlip(null);resetForm();}}
+            style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}>
+            <Icon.Plus/>New Payslip
+          </button>
+        </div>
+      </div>
+
+      {/* ── BY EMPLOYEE VIEW ──────────────────────────────────────────────── */}
+      {viewMode==="byEmployee"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {byEmployeeGroups.length===0&&(
+            <div style={{...s.card,textAlign:"center",padding:48,color:T.gray400}}>No payslips yet.</div>
+          )}
+          {byEmployeeGroups.map(({emp,slips})=>(
+            <div key={emp.id} style={s.card}>
+              {/* Employee header */}
+              <div style={{...s.flex(12,"row","center"),marginBottom:12,paddingBottom:10,borderBottom:`1px solid rgba(255,255,255,0.07)`}}>
+                <div style={{width:38,height:38,borderRadius:6,background:`linear-gradient(135deg,${T.accent},${T.navyLight})`,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0}}>
+                  {emp.avatar}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:15}}>{emp.name}</div>
+                  <div style={{...s.sub,fontSize:12}}>{emp.position} · {emp.department}</div>
+                </div>
+                <div style={{...s.flex(12,"row","center")}}>
+                  <span style={s.badge(T.accent)}>{slips.length} payslip{slips.length!==1?"s":""}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:T.success}}>
+                    Total: R{slips.reduce((sm,p)=>sm+p.netPay,0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              {/* Slip rows */}
+              {slips.map(p=><SlipRow key={p.id} p={p} showEmp={false}/>)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── BY MONTH VIEW ─────────────────────────────────────────────────── */}
+      {viewMode==="byMonth"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {byMonthGroups.length===0&&(
+            <div style={{...s.card,textAlign:"center",padding:48,color:T.gray400}}>No payslips yet.</div>
+          )}
+          {byMonthGroups.map(([period,slips])=>(
+            <div key={period} style={s.card}>
+              {/* Month header */}
+              <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",
+                marginBottom:12,paddingBottom:10,borderBottom:`1px solid rgba(255,255,255,0.07)`}}>
+                <span style={{fontWeight:700,fontSize:15}}>{period}</span>
+                <div style={{...s.flex(12,"row","center")}}>
+                  <span style={s.badge(T.accent)}>{slips.length} employee{slips.length!==1?"s":""}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:T.success}}>
+                    Total: R{slips.reduce((sm,p)=>sm+p.netPay,0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              {/* Slip rows */}
+              {slips.map(p=><SlipRow key={p.id} p={p} showEmp={true}/>)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── New / Edit Modal ──────────────────────────────────────────────── */}
+      {showAdd&&(
+        <Modal title={editSlip?"Edit Payslip":"New Payslip"} onClose={()=>{setShowAdd(false);setEditSlip(null);}}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div>
+              <label style={s.label}>Employee</label>
+              <select value={form.userId} onChange={e=>setForm(f=>({...f,userId:e.target.value}))} style={s.input} disabled={!!editSlip}>
+                <option value="">Select employee…</option>
+                {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div><label style={s.label}>Month</label><select value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} style={s.input}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+              <div><label style={s.label}>Year</label><input type="number" value={form.year} onChange={e=>setForm(f=>({...f,year:+e.target.value}))} style={s.input}/></div>
+              <div><label style={s.label}>Basic Salary (R)</label><input type="number" value={form.basicSalary} onChange={e=>setForm(f=>({...f,basicSalary:e.target.value}))} style={s.input} placeholder="5000"/></div>
+              <div><label style={s.label}>Allowances (R)</label><input type="number" value={form.allowances} onChange={e=>setForm(f=>({...f,allowances:e.target.value}))} style={s.input} placeholder="800"/></div>
+              <div><label style={s.label}>Deductions (R)</label><input type="number" value={form.deductions} onChange={e=>setForm(f=>({...f,deductions:e.target.value}))} style={s.input} placeholder="600"/></div>
+              <div style={{display:"flex",flexDirection:"column",justifyContent:"flex-end",paddingBottom:2}}>
+                <label style={s.label}>Net Pay (Preview)</label>
+                <div style={{fontSize:20,fontWeight:800,color:T.success}}>
+                  R{((+form.basicSalary||0)+(+form.allowances||0)-(+form.deductions||0)).toFixed(2)}
+                </div>
+              </div>
+            </div>
+            <div style={{...s.flex(12,"row","center"),justifyContent:"flex-end",marginTop:4}}>
+              <button onClick={()=>{setShowAdd(false);setEditSlip(null);}} style={s.btn("rgba(255,255,255,0.07)",T.white)}>Cancel</button>
+              <button onClick={saveSlip} style={{...s.btn(),boxShadow:`0 4px 12px ${T.accent}44`}}>Save Payslip</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+  }
  
  // ─── ADMIN STATS ──────────────────────────────────────────────────────────────
  function AdminStats({user,data}) {
@@ -2025,23 +2387,86 @@ new Promise(resolve => {
         </div>
       )}
       {selectedEmp!=="all"&&(
-        <div style={s.card}>
-          <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {data.users.find(u=>u.id===selectedEmp)?.name}</h3>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
-            <tbody>
-              {relevantAtt.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
-                <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
-                  <td style={{padding:"10px 14px",fontSize:13}}>{fmtDate(a.date)}</td>
-                  <td style={{padding:"10px 14px",fontSize:13}}>{a.checkIn||"—"}</td>
-                  <td style={{padding:"10px 14px",fontSize:13}}>{a.checkOut||"—"}</td>
-                  <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
-                </tr>
-              ))}
-              {relevantAtt.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* ── Employee Calendar ── */}
+          {(()=>{
+            const emp      = data.users.find(u=>u.id===selectedEmp);
+            const now      = new Date();
+            const [calYear,  setCalYear]  = React.useState(now.getFullYear());
+            const [calMonth, setCalMonth] = React.useState(now.getMonth());
+            const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+            const days    = daysInMonth(calYear, calMonth);
+            const firstDay= firstDayOfMonth(calYear, calMonth);
+            const todayStr= today();
+            const empAtt  = relevantAtt;
+
+            return (
+              <div style={{...s.card, marginBottom:16, padding:12}}>
+                <div style={{...s.flex(0,"row","center"),justifyContent:"space-between",marginBottom:6}}>
+                  <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>‹</button>
+                  <span style={{...s.h3,fontSize:15}}>{monthNames[calMonth]} {calYear} — {emp?.name}</span>
+                  <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={s.btnSm("rgba(255,255,255,0.07)",T.white)}>›</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+                    <div key={d} style={{textAlign:"center",color:T.gray400,fontSize:10,fontWeight:700,padding:"4px 0"}}>{d}</div>
+                  ))}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                  {Array(firstDay).fill(null).map((_,i)=><div key={"e"+i}/>)}
+                  {Array(days).fill(null).map((_,i)=>{
+                    const d       = i+1;
+                    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+                    const rec     = empAtt.find(a=>a.date===dateStr);
+                    const isToday = dateStr===todayStr;
+                    const isPast  = dateStr<todayStr;
+                    const isWeekend=[0,6].includes(new Date(dateStr).getDay());
+                    const status  = rec?.status || (isPast&&!isWeekend?"absent":null);
+                    let bg="transparent",border="1px solid transparent",textColor=T.white;
+                    if(isToday)              {bg=`${T.accent}33`;   border=`1px solid ${T.accent}`;}
+                    else if(status==="present"){bg=`${T.success}22`; border=`1px solid ${T.success}33`;}
+                    else if(status==="late")   {bg=`${T.warning}22`; border=`1px solid ${T.warning}33`;}
+                    else if(status==="absent") {bg=`${T.danger}22`;  border=`1px solid ${T.danger}33`;}
+                    else if(isWeekend)         {textColor=T.gray400;}
+                    return (
+                      <div key={d} style={{height:40,borderRadius:4,display:"flex",flexDirection:"column",alignItems:"center",
+                        justifyContent:"center",background:bg,border,color:textColor,fontSize:11,fontWeight:isToday?800:500,position:"relative"}}>
+                        {d}
+                        {status&&<div style={{width:5,height:5,borderRadius:"50%",background:status==="present"?T.success:status==="late"?T.warning:T.danger,position:"absolute",bottom:3}}/>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{...s.flex(16,"row","center"),marginTop:8,flexWrap:"wrap"}}>
+                  {[["Present",T.success],["Late",T.warning],["Absent",T.danger],["Today",T.accent]].map(([l,c])=>(
+                    <div key={l} style={{...s.flex(6,"row","center")}}>
+                      <div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{...s.sub,fontSize:11}}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Attendance Log Table ── */}
+          <div style={s.card}>
+            <h3 style={{...s.h3,marginBottom:16}}>Attendance Log — {data.users.find(u=>u.id===selectedEmp)?.name}</h3>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>{["Date","Check-In","Check-Out","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"10px 14px",fontSize:12,fontWeight:700,color:T.gray400,borderBottom:`1px solid rgba(255,255,255,0.06)`}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {relevantAtt.sort((a,b)=>b.date.localeCompare(a.date)).map((a,i)=>(
+                  <tr key={a.id} style={{background:i%2?"rgba(255,255,255,0.02)":"transparent"}}>
+                    <td style={{padding:"10px 14px",fontSize:13}}>{fmtDate(a.date)}</td>
+                    <td style={{padding:"10px 14px",fontSize:13}}>{a.checkIn||"—"}</td>
+                    <td style={{padding:"10px 14px",fontSize:13}}>{a.checkOut||"—"}</td>
+                    <td style={{padding:"10px 14px"}}><span style={s.badge(a.status==="present"?T.success:a.status==="late"?T.warning:T.danger)}>{a.status.toUpperCase()}</span></td>
+                  </tr>
+                ))}
+                {relevantAtt.length===0&&<tr><td colSpan={4} style={{padding:32,textAlign:"center",color:T.gray400}}>No records.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -2387,6 +2812,7 @@ new Promise(resolve => {
           isGlobal ? fetchAllLeaves()      : fetchLeaves(companyId),
           isGlobal ? fetchAllAttendance()  : fetchAttendance(companyId),
           isGlobal ? fetchAllPayslips()    : fetchPayslips(companyId),
+          isGlobal ? fetchAllPayments()   : fetchPayments(companyId),
         ]);
   
       setData({
@@ -2395,6 +2821,7 @@ new Promise(resolve => {
         leaves:     dbLeaves,
         attendance: dbAttendance,
         payslips:   dbPayslips,
+        payments: dbPayments,
       });
     } catch (err) {
       console.warn('Supabase load failed:', err);
@@ -2418,18 +2845,20 @@ new Promise(resolve => {
    },[data]);
  
    const navConfigs = {
-     employee:[
-       {id:"dashboard",label:"Dashboard",    icon:<Icon.Dashboard/>},
-       {id:"leave",    label:"Leave",         icon:<Icon.Leave/>},
-       {id:"payslips", label:"Payslips",      icon:<Icon.Payslip/>},
-       {id:"profile",  label:"Profile",       icon:<Icon.Profile/>},
-       {id:"stats",    label:"My Stats",      icon:<Icon.Stats/>},
-     ],
+    employee:[
+      {id:"dashboard",label:"Dashboard",    icon:<Icon.Dashboard/>},
+      {id:"leave",    label:"Leave",         icon:<Icon.Leave/>},
+      {id:"payslips", label:"Payslips",      icon:<Icon.Payslip/>},
+      {id:"banking",  label:"Banking Details", icon:<Icon.Bank/>},
+      {id:"profile",  label:"Profile",       icon:<Icon.Profile/>},
+      {id:"stats",    label:"My Stats",      icon:<Icon.Stats/>},
+    ],
      company_admin:[
        {id:"employees",label:"Employees",     icon:<Icon.Users/>},
        {id:"leave",    label:"Leave",          icon:<Icon.Leave/>},
        {id:"payslips", label:"Payslips",       icon:<Icon.Payslip/>},
        {id:"stats",    label:"Statistics",     icon:<Icon.Stats/>},
+       {id:"paysalaries", label:"Pay Salaries", icon:<Icon.Money/>},
        {id:"password", label:"Change Password",icon:<Icon.Lock/>},
      ],
      global_admin:[
@@ -2443,9 +2872,9 @@ new Promise(resolve => {
    const renderView = ()=>{
      const p={user:currentUser,data,setData,toast:showToast};
      if(currentUser.role==="employee")
-       return {dashboard:<EmployeeDashboard {...p}/>,leave:<EmployeeLeave {...p}/>,payslips:<EmployeePayslips {...p}/>,profile:<EmployeeProfile {...p}/>,stats:<EmployeeStats {...p}/>}[activeNav]||null;
+       return {dashboard:<EmployeeDashboard {...p}/>,leave:<EmployeeLeave {...p}/>,payslips:<EmployeePayslips {...p}/>,profile:<EmployeeProfile {...p}/>,stats:<EmployeeStats {...p}/>, banking:<EmployeeBanking {...p}/>}[activeNav]||null;
      if(currentUser.role==="company_admin")
-       return {employees:<AdminEmployees {...p}/>,leave:<AdminLeave {...p}/>,payslips:<AdminPayslips {...p}/>,stats:<AdminStats {...p}/>,password:<AdminPassword {...p}/>}[activeNav]||null;
+       return {employees:<AdminEmployees {...p}/>,leave:<AdminLeave {...p}/>,payslips:<AdminPayslips {...p}/>,stats:<AdminStats {...p}/>,password:<AdminPassword {...p}/>,paysalaries:<AdminPaySalaries {...p}/>}[activeNav]||null;
      if(currentUser.role==="global_admin")
        return {overview:<GlobalAdminDashboard {...p}/>,admins:<GlobalAdminManage {...p}/>,allusers:<GlobalAdminUsers {...p}/>,password:<AdminPassword {...p}/>}[activeNav]||null;
    };
